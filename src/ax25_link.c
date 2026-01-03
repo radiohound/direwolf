@@ -1265,6 +1265,15 @@ void dl_data_request (dlq_item_t *E)
 	  dw_printf ("\") state=%d\n", S->state);
 	}
 
+// JWL - I think we want to discard if in disconnected state.
+// App could contine sending data after a disconnection.
+
+	if (S->state == state_0_disconnected) {
+	  cdata_delete (E->txdata);
+	  E->txdata = NULL;
+	  return;
+	}
+
 	if (E->txdata->len <= S->n1_paclen) {
 	  data_request_good_size (S, E->txdata);
 	  E->txdata = NULL;	// Now part of transmit I frame queue.
@@ -5078,9 +5087,9 @@ static void ui_frame (ax25_dlsm_t *S, cmdres_t cr, int pf)
 static void xid_frame (ax25_dlsm_t *S, cmdres_t cr, int pf, unsigned char *info_ptr, int info_len)
 {
 	struct xid_param_s param;
-	char desc[150];
+	char desc[256];
 	int ok;
-	unsigned char xinfo[40];
+	unsigned char xinfo[80];	// about twice max possible size
 	int xlen;
 	cmdres_t res = cr_res;
 	int f = 1;
@@ -5546,7 +5555,7 @@ static void tm201_expiry (ax25_dlsm_t *S)
 {
 
 	struct xid_param_s param;
-	unsigned char xinfo[40];
+	unsigned char xinfo[80];	// about twice max possible size
 	int xlen;
 	cmdres_t cmd = cr_cmd;
 	int p = 1;
@@ -6603,8 +6612,8 @@ static void enter_new_state (ax25_dlsm_t *S, enum dlsm_state_e new_state, const 
 static void mdl_negotiate_request (ax25_dlsm_t *S)
 {
 	struct xid_param_s param;
-	unsigned char xinfo[40];
-	int xlen;
+	unsigned char xinfo[80];	// about twice max possible size
+	int xlen;	
 	cmdres_t cmd = cr_cmd;
 	int p = 1;
 	int nopid = 0;
@@ -6661,6 +6670,7 @@ static void mdl_negotiate_request (ax25_dlsm_t *S)
 static void initiate_negotiation (ax25_dlsm_t *S, struct xid_param_s *param)
 {
 	    param->full_duplex = 0;
+
 	    switch (S->srej_enable) {
 	      case srej_single:
 	      case srej_multi:
@@ -6673,12 +6683,58 @@ static void initiate_negotiation (ax25_dlsm_t *S, struct xid_param_s *param)
 	    }
 
 	    param->modulo = S->modulo;
-	    param->i_field_length_rx = S->n1_paclen;	// Hmmmm.  Should we ask for what the user
-							// specified for PACLEN or offer the maximum
-							// that we can handle, AX25_N1_PACLEN_MAX?
-	    param->window_size_rx = S->k_maxframe;
-	    param->ack_timer = (int)(g_misc_config_p->frack * 1000);
-	    param->retries = S->n2_retry;
+
+/*
+ *	I‑Field Length TX
+ *	This is the maximum I‑frame payload size that I will transmit.
+ *	The XID command tells the peer:
+ *	"The largest I‑frame I will send to you is N bytes."
+ *	This is about my outbound frame size.
+ *
+ *	Note that the response could be smaller so we'd have
+ *	to reduce working paclen.
+ */
+	    param->i_field_length_tx = S->n1_paclen;	// PACLEN from configuration file.
+
+/*
+ *	I‑Field Length RX
+ *	This is the maximum I‑frame payload size that I am capable of receiving.
+ *	The XID command tells the peer:
+ *	"The largest I‑frame I can handle from you is N bytes."
+ *	This is about my inbound frame size.
+ */
+	    param->i_field_length_rx = AX25_N1_PACLEN_MAX;
+
+/*
+ *	window_size_tx
+ *	   This is the size of the transmit window that I will use when sending I‑frames.
+ *	   - The XID command tells the peer:
+ *	      "I will send up to N unacknowledged frames at a time."
+ *	   - It defines my outbound pipeline depth.
+ *	   - Larger TX window = I can send more before waiting for RR/RNR/ACK.
+ *	   This initially comes from the configuration file EMAXFRAME but
+ *	   can be scaled back by the XID exchange if the other side doesn't
+ *	   have enough buffer space.  Also known as "k".
+ */
+	    param->window_size_tx = S->k_maxframe;
+
+/*
+ *	window_size_rx
+ *	   This is the size of the receive window that I can accept from the peer.
+ *	   - The XID command tells the peer:
+ *	      "You may send me up to N unacknowledged frames before I must ACK."
+ *	   - It defines my inbound buffering capability.
+ *	   - Larger RX window = the peer can send more before needing my RR.
+ *	   I would offer AX25_K_MAXFRAME_EXTENDED_MAX (63) because I don't have memory
+ *	   constraints.  I really don't care what the peer has to say about this.
+ *	   I generate an ack, of some sort, at the end of the incoming
+ *	   transmission, i.e. when DCD drops.
+*/
+	    param->window_size_rx = AX25_K_MAXFRAME_EXTENDED_MAX;
+
+	    param->ack_timer = (int)(g_misc_config_p->frack * 1000);	// "T1" in milliseconds
+
+	    param->retries = S->n2_retry;	// "N1"
 }
 
 
@@ -6686,7 +6742,7 @@ static void initiate_negotiation (ax25_dlsm_t *S, struct xid_param_s *param)
  *
  * Name:	negotiation_response
  * 
- * Purpose:	Used when receiving the XID command and preparing the XID response.
+ * Purpose:	Used when receiving the XID *command* and preparing the XID response.
  *
  * Description:	Take what other station has asked for and reduce if we have lesser capabilities.
  *		For example if other end wants 8k information part we reduce it to 2k.
@@ -6711,9 +6767,11 @@ static void negotiation_response (ax25_dlsm_t *S, struct xid_param_s *param)
 
 // Other end might want 8.
 // Seems unlikely.  If it implements XID it should have modulo 128.
+// It would be REALLY BAD if we started out with 128, started exchanging
+// I Frames, then the XID exchange wanted to change it to 8.
 
 	if (param->modulo == modulo_unknown) {
-	  param->modulo = 8;			// Not specified.  Set default.
+	  param->modulo = 128;			// Not specified.  Set default.
 	}
 	else {
 	  param->modulo = MIN(param->modulo, 128);
@@ -6727,28 +6785,53 @@ static void negotiation_response (ax25_dlsm_t *S, struct xid_param_s *param)
 	  param->srej = (param->modulo == 128) ? srej_single : srej_none;	// not specified, set default
 	}
 
-// We can currently do up to 2k.
+// i_field_length_TX is what other station wants for it's outgoing paclen.
+// We can currently handle up to 2k.
 // Take minimum of that and what other guy asks for.
 
-	if (param->i_field_length_rx == G_UNKNOWN) {
-	  param->i_field_length_rx = 256;	// Not specified, take default.
+	if (param->i_field_length_tx == G_UNKNOWN) {
+	  param->i_field_length_tx = AX25_N1_PACLEN_DEFAULT;	// Not specified, take default.
 	}
 	else {
-	  param->i_field_length_rx = MIN(param->i_field_length_rx, AX25_N1_PACLEN_MAX);
+	  param->i_field_length_tx = MIN(param->i_field_length_tx, AX25_N1_PACLEN_MAX);
 	}
 
-// In theory extended mode can have window size of 127 but
+// i_field_length_RX is what other station is capable of receiving.
+// Take minimum of our desired paclen and capability other station to receive.
+
+	if (param->i_field_length_rx == G_UNKNOWN) {
+	  param->i_field_length_rx = AX25_N1_PACLEN_DEFAULT;	// Not specified, take default.
+	}
+	else {
+	  param->i_field_length_rx = MIN(param->i_field_length_rx, S->n1_paclen);
+	}
+
+// window_size_TX is what the other end has requested.
+// In theory extended mode can have window size of 127 (for REJ) but
 // I'm limiting it to 63 for the reason mentioned in the SREJ logic.
 
-	if (param->window_size_rx == G_UNKNOWN) {
-	  param->window_size_rx = (param->modulo == 128) ? 32 : 4;	// not specified, set default.
+	if (param->window_size_tx == G_UNKNOWN) {
+	  param->window_size_tx = (param->modulo == 128) ? 
+		AX25_K_MAXFRAME_EXTENDED_DEFAULT : AX25_K_MAXFRAME_BASIC_DEFAULT;	// not specified, set default.
 	}
 	else {
 	  if (param->modulo == 128)
-	    param->window_size_rx = MIN(param->window_size_rx, AX25_K_MAXFRAME_EXTENDED_MAX);
+	    param->window_size_tx = MIN(param->window_size_tx, AX25_K_MAXFRAME_EXTENDED_MAX);
 	  else
-	    param->window_size_rx = MIN(param->window_size_rx, AX25_K_MAXFRAME_BASIC_MAX);
+	    param->window_size_tx = MIN(param->window_size_tx, AX25_K_MAXFRAME_BASIC_MAX);
 	}
+
+// window_size_RX is what the other end is capable of.
+// We should not exceed that for our outgoing I frames.
+
+	if (param->window_size_rx == G_UNKNOWN) {
+	  param->window_size_rx = (param->modulo == 128) ? 
+		AX25_K_MAXFRAME_EXTENDED_DEFAULT : AX25_K_MAXFRAME_BASIC_DEFAULT;	// not specified, assume default.
+	}
+	else {
+	  param->window_size_rx = MIN(param->window_size_rx, S->k_maxframe);
+	}
+
 
 // Erratum: Unclear.  Is the Acknowledgement Timer before or after compensating for digipeaters
 // in the path?  e.g.  Typically TNCs use the FRACK parameter for this and it often defaults to 3.
@@ -6801,13 +6884,45 @@ static void complete_negotiation (ax25_dlsm_t *S, struct xid_param_s *param)
 	  S->modulo = param->modulo;
 	}
 
+// i_field_length_TX is from viewpoint of other station.
+// Do anything with this?
+
+	//if (param->i_field_length_tx != G_UNKNOWN) {
+	//  ...
+	//}
+
+// i_field_length_RX is from viewpoint of other station.
+// We might need to reduce our paclen value if other station has lower limit.
+
 	if (param->i_field_length_rx != G_UNKNOWN) {
-	  S->n1_paclen = param->i_field_length_rx;
+	  if (S->n1_paclen > param->i_field_length_rx) {
+	    text_color_set (DW_COLOR_INFO);
+	    dw_printf ("Reducing our PACLEN from %d to %d as result of XID exchange.\n",
+		S->n1_paclen, param->i_field_length_rx);
+	    S->n1_paclen = param->i_field_length_rx;
+	  }
 	}
 
+// window_size_TX from view point of other station.  What it wants to send.
+// Do anything with this?
+
+	//if (param->window_size_tx != G_UNKNOWN) {
+	//  ...
+	//}
+
+// window_size_RX from view point of other station.
+// We might need to reduce our maxframe value if other station has lower limit.
+
 	if (param->window_size_rx != G_UNKNOWN) {
-	  S->k_maxframe = param->window_size_rx;
+	  if (S->k_maxframe > param->window_size_rx) {
+	    text_color_set (DW_COLOR_INFO);
+	    dw_printf ("Reducing our EMAXFRAME from %d to %d as result of XID exchange.\n",
+		S->k_maxframe, param->window_size_rx);
+	    S->k_maxframe = param->window_size_rx;
+	  }
 	}
+
+// FIXME: revisit this.
 
 	if (param->ack_timer != G_UNKNOWN) {
 	  S->t1v = param->ack_timer * 0.001;
@@ -6951,6 +7066,14 @@ static void resume_t1 (ax25_dlsm_t *S, const char *from_func, int from_line)
 	  if (s_debug_timers) {
 	    text_color_set(DW_COLOR_DEBUG);
 	    dw_printf ("Resumed T1 after pausing for %.3f sec, %.3f still remaining, [now=%.3f]\n", paused_for_sec, S->t1_exp - now, now - S->start_time);
+	  }
+
+	  // Did it expire already?
+	  if (S->t1_exp <= now) {
+	    S->t1_exp = 0;
+	    S->t1_paused_at = 0;
+	    S->t1_had_expired = 1;
+	    t1_expiry (S);
 	  }
 	}
 

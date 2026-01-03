@@ -1031,7 +1031,7 @@ static int send_one_frame (int c, int p, packet_t pp)
 
 	  if (ftype == frame_type_U_XID) {
 	    struct xid_param_s param;
-	    char info2text[150];
+	    char info2text[256];
 
 	    xid_parse (pinfo, info_len, &param, info2text, sizeof(info2text));
 	    dw_printf (" %s\n", info2text);

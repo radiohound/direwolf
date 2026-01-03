@@ -5580,20 +5580,22 @@ void config_init (char *fname, struct audio_s *p_audio_config,
  */
 
 	  else if (strcasecmp(t, "RETRY") == 0) {
-	    int n;
 	    t = split(NULL,0);
 	    if (t == NULL) {
 	      text_color_set(DW_COLOR_ERROR);
 	      dw_printf ("Line %d: Missing value for RETRY.\n", line);
 	      continue;
 	    }
-	    n = atoi(t);
-            if (n >= AX25_N2_RETRY_MIN && n <= AX25_N2_RETRY_MAX) {
-	      p_misc_config->retry = n;
-	    }
-	    else {
+	    p_misc_config->retry = atoi(t);
+            if (p_misc_config->retry < AX25_N2_RETRY_MIN) {
 	      text_color_set(DW_COLOR_ERROR);
-              dw_printf ("Line %d: Invalid RETRY number. Using default %d.\n", line, p_misc_config->retry);
+              dw_printf ("Line %d: RETRY number can't be less than %d.\n", line, AX25_N2_RETRY_MIN);
+	      p_misc_config->retry = AX25_N2_RETRY_MIN;
+	    }
+            if (p_misc_config->retry > AX25_N2_RETRY_MAX) {
+	      text_color_set(DW_COLOR_ERROR);
+              dw_printf ("Line %d: RETRY number can't be greater than %d.\n", line, AX25_N2_RETRY_MAX);
+	      p_misc_config->retry = AX25_N2_RETRY_MAX;
 	    }
 	  }
 

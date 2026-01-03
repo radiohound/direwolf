@@ -23,7 +23,7 @@
 
 #define AX25_N2_RETRY_MIN 1		// Number of times to retry before giving up.
 #define AX25_N2_RETRY_DEFAULT 10
-#define AX25_N2_RETRY_MAX 15
+#define AX25_N2_RETRY_MAX 20
 
 
 #define AX25_T1V_FRACK_MIN 2		// Number of seconds to wait before retrying.

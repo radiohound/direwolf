@@ -431,8 +431,26 @@ int xid_parse (unsigned char *info, int info_len, struct xid_param_s *result, ch
  *					    Up to 8191 will fit into the field.
  *					    Use G_UNKNOWN to omit this.
  *
- *			window_size_rx 	- Maximum window size ("k") that I can handle.
- *				   Defaults are are 4 for modulo 8 and 32 for modulo 128.
+ *			window_size_tx
+ *				   This is the size of the transmit window that I will use when sending I‑frames.
+ *				   - It tells the peer:
+ *				      "I will send up to N unacknowledged frames at a time."
+ *				   - It defines my outbound pipeline depth.
+ *				   - Larger TX window = I can send more before waiting for RR/RNR/ACK.
+ *				   This initially comes from the configuration file EMAXFRAME but
+ *				   can be scaled back by the XID exchange if the other side doesn't
+ *				   have enough buffer space.  Also known as "k".
+ *
+ *			window_size_rx
+ *				   This is the size of the receive window that I can accept from the peer.
+ *				   - It tells the peer:
+ *				      "You may send me up to N unacknowledged frames before I must ACK."
+ *				   - It defines my inbound buffering capability.
+ *				   - Larger RX window = the peer can send more before needing my RR.
+ *				   I would offer AX25_K_MAXFRAME_EXTENDED_MAX (63) because I don't have memory
+ *				   constraints.  I really don't care if the peer negotiates this down.
+ *				   I generate an ack, of some sort, at the end of the incoming
+ *				   transmission, i.e. when DCD drops.
  *
  *			ack_timer	- Acknowledge timer in milliseconds.
  *					*** describe meaning.  ***
@@ -448,8 +466,9 @@ int xid_parse (unsigned char *info, int info_len, struct xid_param_s *result, ch
  * Outputs:	info	- Information part of XID frame.
  *			  Does not include the control byte.
  *			  Use buffer of 40 bytes just to be safe.
+#warning make it bigger.
  *
- * Returns:	Number of bytes in the info part.  Should be at most 27.
+ * Returns:	Number of bytes in the info part.  Should be at most 27(?).
  *		Again, provide a larger space just to be safe in case this ever changes.
  *
  * Description:	6.3.2  "Parameter negotiation occurs at any time. It is accomplished by sending
@@ -498,12 +517,14 @@ int xid_encode (struct xid_param_s *param, unsigned char *info, cmdres_t cr)
 
 	m = 4;		// classes of procedures
 	m += 5;		// HDLC optional features
+	if (param->i_field_length_tx != G_UNKNOWN) m += 4;
 	if (param->i_field_length_rx != G_UNKNOWN) m += 4;
+	if (param->window_size_tx != G_UNKNOWN) m += 3;
 	if (param->window_size_rx != G_UNKNOWN) m += 3;
 	if (param->ack_timer != G_UNKNOWN) m += 4;
 	if (param->retries != G_UNKNOWN) m += 3;
 
-	*p++ = m;		// 0x17 if all present.
+	*p++ = m;		// 0x1e if all present.
 
 // "Classes of Procedures" has half / full duplex.
 
@@ -584,7 +605,18 @@ int xid_encode (struct xid_param_s *param, unsigned char *info, cmdres_t cr)
 
 // The rest are skipped if undefined values.
 
-// "I Field Length Rx" - max I field length acceptable to me.
+// "I Field Length Tx" - max I frame info field length that I would like to send.
+// This is in bits.  8191 would be max number of bytes to fit in field.
+
+	if (param->i_field_length_tx != G_UNKNOWN) {
+	  *p++ = PI_I_Field_Length_Tx;
+	  *p++ = 2;
+	  x = param->i_field_length_tx * 8;
+	  *p++ = (x >> 8) & 0xff;
+	  *p++ = x & 0xff;
+	}
+
+// "I Field Length Rx" - max I frame info field length that I am capable of receiving.
 // This is in bits.  8191 would be max number of bytes to fit in field.
 
 	if (param->i_field_length_rx != G_UNKNOWN) {
@@ -593,6 +625,14 @@ int xid_encode (struct xid_param_s *param, unsigned char *info, cmdres_t cr)
 	  x = param->i_field_length_rx * 8;
 	  *p++ = (x >> 8) & 0xff;
 	  *p++ = x & 0xff;
+	}
+
+// "Window Size Tx"
+
+	if (param->window_size_tx != G_UNKNOWN) {
+	  *p++ = PI_Window_Size_Tx;
+	  *p++ = 1;
+	  *p++ = param->window_size_tx;
 	}
 
 // "Window Size Rx"
@@ -698,8 +738,8 @@ int main (int argc, char *argv[]) {
 	struct xid_param_s param;
 	struct xid_param_s param2;
 	int n;
-	unsigned char info[40];	// Currently max of 27 but things can change.
-	char desc[150];		// I've seen 109.
+	unsigned char info[80];	// Currently max of 27 but things can change.
+	char desc[200];		// I've seen 109.
 
 
 /* parse example. */

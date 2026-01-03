@@ -280,13 +280,13 @@ void dw_printf_capture_init (char *o_opt, char *O_opt)
 	    exit (EXIT_FAILURE);
 	  }
 	}
-printf ("DEBUG O_opt=%s, strlen=%d\n", O_opt, (int)strlen(O_opt));
+	// printf ("DEBUG O_opt=%s, strlen=%d\n", O_opt, (int)strlen(O_opt));
 	if (strlen(O_opt) > 0) {
-	  O_fp = fopen (o_opt, "w+");
+	  O_fp = fopen (O_opt, "w");
 	  if (O_fp == NULL) {
 	    text_color_set (DW_COLOR_ERROR);
 	    dw_printf ("Failed to open -O %s for write.\n", O_opt);
-	dw_printf ("errno=%d\n", errno);
+	    //dw_printf ("errno=%d\n", errno);
 	    exit (EXIT_FAILURE);
 	  }
 	}

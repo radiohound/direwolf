@@ -1,7 +1,7 @@
 //
 //    This file is part of Dire Wolf, an amateur radio packet TNC.
 //
-//    Copyright (C) 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2019, 2020, 2021, 2023, 2024. 2025  John Langner, WB2OSZ
+//    Copyright (C) 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2019, 2020, 2021, 2023, 2024. 2025, 2026  John Langner, WB2OSZ
 //
 //    This program is free software: you can redistribute it and/or modify
 //    it under the terms of the GNU General Public License as published by
@@ -299,7 +299,7 @@ int main (int argc, char *argv[])
 
 // FIXME: consider case of no space between t and number.
 
-// Prescan for options that are needed before ant text goes to console.
+// Prescan for options that are needed before any text goes to console.
 
 	for (j=1; j<argc-1; j++) {
 	  if (strcmp(argv[j], "-t") == 0) {
@@ -328,8 +328,9 @@ int main (int argc, char *argv[])
 
 	text_color_set(DW_COLOR_INFO);
 	//dw_printf ("Dire Wolf version %d.%d (%s) BETA TEST 1\n", MAJOR_VERSION, MINOR_VERSION, __DATE__);
-	dw_printf ("Dire Wolf DEVELOPMENT version %d.%d %s (%s)\n", MAJOR_VERSION, MINOR_VERSION, "B", __DATE__);
+	dw_printf ("Dire Wolf DEVELOPMENT version %d.%d %s (%s)\n", MAJOR_VERSION, MINOR_VERSION, "C", __DATE__);
 // B = new -dq & tcp_wmem
+// C = AX.25 v2.2 improvements
 	//dw_printf ("Dire Wolf Release %d.%d,%d, October 2025\n", MAJOR_VERSION, MINOR_VERSION, PATCH_VERSION);
 
 
