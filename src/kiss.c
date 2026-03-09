@@ -142,6 +142,7 @@ void kisspt_send_rec_packet (int chan, int kiss_cmd, unsigned char *fbuf,  int f
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <stddef.h>
 #include <string.h>
 #include <ctype.h>
 #include <fcntl.h>
