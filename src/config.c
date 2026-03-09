@@ -883,7 +883,6 @@ void config_init (char *fname, struct audio_s *p_audio_config,
 	p_misc_config->kiss_port[0] = DEFAULT_KISS_PORT;
 	p_misc_config->kiss_chan[0] = -1;	// all channels.
 
-	p_misc_config->enable_kiss_pt = 0;				/* -p option */
 	p_misc_config->kiss_copy = 0;
 
 	p_misc_config->dns_sd_enabled = 1;
@@ -5063,6 +5062,7 @@ void config_init (char *fname, struct audio_s *p_audio_config,
 	    // "KISSPORT 0" is used to remove the default entry.
 
 	    if (tcp_port == 0) {
+// FIXME: This is no longer correct after allowing multiple TCP ports.
 	      p_misc_config->kiss_port[0] = 0;		// Should all be wiped out?
 	    }
 	    else {
@@ -5092,6 +5092,72 @@ void config_init (char *fname, struct audio_s *p_audio_config,
 	        dw_printf ("Line %d: Too many KISSPORT commands.\n", line);
 	      }
 	    }
+	  }
+
+
+/*
+ * KISSPTY [ chan ]		- Add pseudo terminal for KISS client. Linux only feature.
+ *				  Modern applications generally allow KISS over TCP.
+ *				  This is here mostly for those who insist on using AX.25 for Linux.
+ *				  https://www.ardc.net/apply/grants/2021-grants/grant-fixing-the-linux-kernel-ax-25/
+ */
+
+	// Originally, we could have a single KISS pty for client application use.
+	// This was activated by the -p command line option.  There was no config file equivalent.
+	//
+	// The pty number can't be specified and is unpredictable so we create a
+	// symlink of /tmp/kisstnc.
+	//
+	// In version 1.9, we add the capability to have multiple pty interfaces and a
+	// specific channel can be specified for applications that don't know how to deal
+	// with multi-port TNCs.
+	//
+	// New config file item:
+	//
+	// KISSPTY
+	//		Same as command line option -p. All channels. Symlink /tmp/kisstnc.
+	//
+	// KISSPTY n
+	//		Frames received from channel n would go to client app with 4 bit kiss channel field set to 0.
+	//		For KISS frames from client, the channel would be ignored, and it would be transmitted to channel n.
+	//		symlink /tmp/kisstnc{n}
+	//
+	//		e.g. PTYKISS 7 --> symlink /tmp/kisstnc7
+	//
+	// There is a maximum number of pty interfaces allowed.
+	// Edit kiss.h, increase number and rebuild, if you need more.
+	//
+	// The channel number, or lack of, may not be repeated.
+	// This would try to create multiple symlinks with the same name.
+
+
+	  else if (strcasecmp(t, "KISSPTY") == 0) {
+#if __WIN32__
+	    text_color_set(DW_COLOR_ERROR);
+	    dw_printf ("Line %d: KISSPTY is not available on Windows.\n", line);
+#else
+	    int chan = -1;	// optional.  default to all if not specified.
+	    t = split(NULL,0);
+	    if (t != NULL) {
+	      chan = atoi(t);
+	      if (chan < 0 || chan >= MAX_TOTAL_CHANS) {
+	        text_color_set(DW_COLOR_ERROR);
+	        dw_printf ("Line %d: Invalid channel %d for KISSPORT command.  Must be in range 0 thru %d.\n", line, chan, MAX_TOTAL_CHANS-1);
+	        continue;
+	      }
+	    }
+
+	    // Add to list if maximum number not exceeded.
+	    // FIXME: Don't allow duplicate channel number, including -1 for all.
+
+	    if (p_misc_config->num_kiss_pty < MAX_KISS_PTY) {
+	      p_misc_config->kiss_pty_chan[p_misc_config->num_kiss_pty++] = chan;
+	    }
+	    else {
+	      text_color_set(DW_COLOR_ERROR);
+	      dw_printf ("Line %d: Too many KISSPTY commands.\n", line);
+	    }
+#endif
 	  }
 
 
@@ -5186,8 +5252,8 @@ void config_init (char *fname, struct audio_s *p_audio_config,
 
 
 /*
- * DNSSD 		- Enable or disable (1/0) dns-sd, DNS Service Discovery announcements
- * DNSSDNAME            - Set DNS-SD service name, defaults to "Dire Wolf on <hostname>"
+ * DNSSD n		 - Enable or disable (1/0) dns-sd, DNS Service Discovery announcements
+ * DNSSDNAME x           - Set DNS-SD service name, defaults to "Dire Wolf on <hostname>"
  */
 
 	  else if (strcasecmp(t, "DNSSD") == 0) {

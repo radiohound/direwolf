@@ -60,9 +60,17 @@ struct misc_config_s {
 				// As an experiment, let's see if making the TCP send buffer larger helps.
 
 	int kiss_copy;		/* Data from network KISS client is copied to all others. */
-	int enable_kiss_pt;	/* Enable pseudo terminal for KISS. */
-				/* Want this to be off by default because it hangs */
-				/* after a while if nothing is reading from other end. */
+
+	int num_kiss_pty;	/* Number of pseudo terminals defined for KISS clients. Maximum MAX_KISS_PTY. */
+				/* i.e. Number of elements used in following array. */
+
+	int kiss_pty_chan[MAX_KISS_PTY]; /* Normally -1 meaning convey all channels. */
+				/* It is also possible to associate the pty with a single channel to appease */
+				/* old applications that don't know how to deal with multi-port TNCs which */
+				/* existed back in the 1990s. */
+
+				/* Frames received from channel n would go to client app with 4 bit kiss channel field set to 0. */ 						/* For KISS frames from client, the channel would be ignored, and it would be transmitted to channel n. */					/* symlink /tmp/kisstnc{n} */
+				/* e.g. PTYKISS 7 --> symlink /tmp/kisstnc7 */
 
 	char kiss_serial_port[20];
 				/* Serial port name for our end of the */

@@ -328,9 +328,11 @@ int main (int argc, char *argv[])
 
 	text_color_set(DW_COLOR_INFO);
 	//dw_printf ("Dire Wolf version %d.%d (%s) BETA TEST 1\n", MAJOR_VERSION, MINOR_VERSION, __DATE__);
-	dw_printf ("Dire Wolf DEVELOPMENT version %d.%d %s (%s)\n", MAJOR_VERSION, MINOR_VERSION, "C", __DATE__);
+	dw_printf ("Dire Wolf DEVELOPMENT version %d.%d %s (%s)\n", MAJOR_VERSION, MINOR_VERSION, "D", __DATE__);
 // B = new -dq & tcp_wmem
 // C = AX.25 v2.2 improvements
+// D = KISSPTY config.
+// TBD? = AX.25 v2.2 negotiating status
 	//dw_printf ("Dire Wolf Release %d.%d,%d, October 2025\n", MAJOR_VERSION, MINOR_VERSION, PATCH_VERSION);
 
 
@@ -977,8 +979,6 @@ int main (int argc, char *argv[])
 	  strlcpy (misc_config.log_path, l_opt_logdir, sizeof(misc_config.log_path));
 	}
 
-	misc_config.enable_kiss_pt = enable_pseudo_terminal;
-
 	if (strlen(input_file) > 0) {
 
 	  strlcpy (audio_config.adev[0].adevice_in, input_file, sizeof(audio_config.adev[0].adevice_in));
@@ -1183,8 +1183,10 @@ int main (int argc, char *argv[])
 
 /*
  * Create a pseudo terminal and KISS TNC emulator.
+ * In 1.9 we now have kisspty definitions in config file as well.
+ * Provide the -p option state to add to this.
  */
-	kisspt_init (&misc_config);
+	kisspt_init (&misc_config, enable_pseudo_terminal);
 	kissserial_init (&misc_config);
 	kiss_frame_init (&audio_config);
 
