@@ -3018,10 +3018,12 @@ static void aprs_positionless_weather_report (decode_aprs_t *A, unsigned char *i
  *		wind is in the form c999s999.
  *
  * References:	APRS Weather specification comments.
- *		http://aprs.org/aprs11/spec-wx.txt
+ *		http://aprs.org/aprs11/spec-wx.txt   (originally - page has disappeared!)
+ *		https://www.aprs.org/aprs11/spec-wx.txt    (now here)
  *
  *		Weather updates to the spec.
- *		http://aprs.org/aprs12/weather-new.txt
+ *		http://aprs.org/aprs12/weather-new.txt   (originally - page has disappeared!)
+ *		https://www.aprs.org/aprs12/weather-new.txt    (now here)
  *
  * Examples:
  *	
@@ -3271,9 +3273,13 @@ static void weather_data (decode_aprs_t *A, char *wdata, int wind_prefix)
 	  }
 	  else if (getwdata (&wp, 'X', 3, &fval)) {	
 
-	/* X = Nuclear Radiation.  */
-	/* Encoded as two significant digits and order of magnitude */
-	/* like resistor color code. */
+	    /* X = Nuclear Radiation.  */
+	    /* The xxx are like the resistor
+		code.  First, two digits of precision and the last digit is the order
+		of magnitude in NANOSEVERTS/Hr.  So 123 is 12 * 10^3 nanosieverts/hr or
+		12 microsieverts/hr. Or 456 is 45 * 10^6 nanosieverts/hr or 45
+		millisieverts/hr.  One bananna generates about .1 uSieverts/hr,
+		a Brazil nut .4 uS/hr. */
 
 // TODO: decode this properly
 	
@@ -3285,6 +3291,37 @@ static void weather_data (decode_aprs_t *A, char *wdata, int wind_prefix)
 	  }
 
 // TODO: add new flood level, battery voltage, etc.
+// https://www.aprs.org/aprs12/watergage.txt
+
+	  else if (getwdata (&wp, 'F', 4, &fval)) {
+
+	    /* Fxxxx = water level above or below flood stage or mean tide in tenths
+		of a foot.  Values can range between +999 and -999 in tenths
+		meaning -99.9 to +99.9 feet.  Meters are not used for the on
+		air format because it gives too little or too much resolution
+		to fit in the fixed length 4 bytes that are required.  */
+
+	    if (fval != G_UNKNOWN) {
+	      char ctemp[40];
+	      snprintf (ctemp, sizeof(ctemp), ", %.1f ft relative to mean tide", fval * 0.1);
+	      strlcat (A->g_weather, ctemp, sizeof(A->g_weather));
+	    }
+	  }
+
+	  else if (getwdata (&wp, 'V', 3, &fval)) {
+
+	    /* Vxxx = battery volts in tenths   128 would mean 12.8 volts  */
+
+	    if (fval != G_UNKNOWN) {
+	      char ctemp[40];
+	      snprintf (ctemp, sizeof(ctemp), ", %.1f battery volts", fval * 0.1);
+	      strlcat (A->g_weather, ctemp, sizeof(A->g_weather));
+	    }
+	  }
+
+	  // else if ... Z
+
+	    /* Zxx = Device type -- Inconsistent with all others: Two alpha[numeric?] characters */
 
 	  else {
 	    keep_going = 0;
