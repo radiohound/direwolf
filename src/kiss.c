@@ -65,7 +65,7 @@
  *			FF	Return		Exit KISS mode.  Ignored.
  *
  *
- *		Messages sent to client application:
+ *		Frames sent to client application:
  *
  *			_0	Data Frame	Received AX.25 frame in raw format.
  *
@@ -73,7 +73,7 @@
  * Platform differences:
  *
  *		For the Linux case,
- *			We supply a pseudo terminal for use by other client applications.
+ *			We supply a pseudo terminal(s) for use by other client applications.
  *
  * Version 1.5:	Split serial port version off into its own file.
  *
@@ -177,18 +177,21 @@ static int pt_master_fd[MAX_KISS_PTY];		/* File descriptor for my end. -1 for no
 static char pt_slave_name[MAX_KISS_PTY][32];	/* Pseudo terminal slave name  */
 						/* like /dev/pts/999 */
 
+static char symlink_name[MAX_KISS_PTY][32];	/* Symlink names like /tmp/kisstnc{n} */
+						/* Keep them for cleanup on exit. */
+
 static struct kissport_status_s kps[MAX_KISS_PTY]; /* Needed for selecting/adjusting channel */
 						/* for kiss client app to direwolf direction. */
 
 
 /*
- * Symlink to pseudo terminal name which changes.
+ * Base bane for symlink to pseudo terminal.
  * Channel number might be appended.
  */
 
 #define TMP_KISSTNC_SYMLINK "/tmp/kisstnc"
 
-
+static void kisspty_term (void);
 static void * kisspt_listen_thread (void *arg);
 
 
@@ -247,24 +250,26 @@ void kisspt_init (struct misc_config_s *mc, int enable_pseudo_terminal)
 /*
  * If -p was a command line option, act like there was a "KISSPTY" in the config file.
  */
-	int needed = 1;
-	for (int j = 0; j < mc->num_kiss_pty; j++) {
-	  if (mc->kiss_pty_chan[j] == -1) {
-	    needed = 0;
+	if (enable_pseudo_terminal) {
+	  int needed = 1;
+	  for (int j = 0; j < mc->num_kiss_pty; j++) {
+	    if (mc->kiss_pty_chan[j] == -1) {
+	      needed = 0;
+	    }
 	  }
-	}
-	if (needed) {
-	  if (mc->num_kiss_pty < MAX_KISS_PTY) {
-	    mc->kiss_pty_chan[mc->num_kiss_pty++] = -1;
-	  }
-	  else {
-	    text_color_set(DW_COLOR_ERROR);
-	    dw_printf ("Command line option -p ignored because max pty count would be exceeded.");
+	  if (needed) {
+	    if (mc->num_kiss_pty < MAX_KISS_PTY) {
+	      mc->kiss_pty_chan[mc->num_kiss_pty++] = -1;
+	    }
+	    else {
+	      text_color_set(DW_COLOR_ERROR);
+	      dw_printf ("Command line option -p ignored because max pty count would be exceeded.");
+	    }
 	  }
 	}
 
 /*
- * This reads messages from client.
+ * This reads frames from client.
  */
 	for (int j = 0; j < MAX_KISS_PTY; j++) {
 	   pt_master_fd[j] = -1;
@@ -289,7 +294,24 @@ void kisspt_init (struct misc_config_s *mc, int enable_pseudo_terminal)
 	  text_color_set(DW_COLOR_DEBUG);
 	  dw_printf ("end of kisspt_init: \n");
 	}
-}
+
+	atexit (kisspty_term);
+
+}  // end kisspty_init
+
+
+// Clean up symlinks on exit.
+
+static void kisspty_term (void)
+{
+	for (int j = 0; j < save_mc->num_kiss_pty; j++) {
+	  text_color_set(DW_COLOR_DEBUG);
+	  dw_printf ("Removing symlink %s\n", symlink_name[j]);
+	  unlink (symlink_name[j]);
+ 	}
+
+}  // end kisspty_term
+
 
 
 /*
@@ -395,33 +417,31 @@ static int kisspt_open_pt (int pty_index)
  *
  * In version 1.9, we append the channel number if not all.
  */
-
-	char symlink_name[32];
+	
 	if (save_mc->kiss_pty_chan[pty_index] >= 0) {
-	  snprintf (symlink_name, sizeof(symlink_name), "%s%d", TMP_KISSTNC_SYMLINK, save_mc->kiss_pty_chan[pty_index]);
+	  snprintf (symlink_name[pty_index], sizeof(symlink_name[pty_index]), "%s%d", TMP_KISSTNC_SYMLINK, save_mc->kiss_pty_chan[pty_index]);
 	}
 	else {
-	  strlcpy (symlink_name, TMP_KISSTNC_SYMLINK, sizeof(symlink_name));
+	  strlcpy (symlink_name[pty_index], TMP_KISSTNC_SYMLINK, sizeof(symlink_name));
 	}
 
 	// Just in case it didn't get cleaned up.
-	unlink (symlink_name);
+	unlink (symlink_name[pty_index]);
 
-
-// FIXME: Remove symlink(s) when application exits.
-
-	if (symlink (pt_slave_name[pty_index], symlink_name) == 0) {
-	    dw_printf ("Created symlink %s -> %s\n", symlink_name, pt_slave_name[pty_index]);
+	if (symlink (pt_slave_name[pty_index], symlink_name[pty_index]) == 0) {
+	    dw_printf ("Created symlink %s -> %s\n", symlink_name[pty_index], pt_slave_name[pty_index]);
 	}
 	else {
 	    text_color_set(DW_COLOR_ERROR);
-	    dw_printf ("Failed to create symlink %s -> %s\n", symlink_name, pt_slave_name[pty_index]);
+	    dw_printf ("Failed to create symlink %s -> %s\n", symlink_name[pty_index], pt_slave_name[pty_index]);
 	    perror ("");
 	    // Serious.  Should probably exit.
 	}
 
 	return (fd);
-}
+
+}  // end kisspt_open_pt
+
 
 
 
@@ -457,7 +477,7 @@ static int kisspt_open_pt (int pty_index)
  *		client		- This is for responses to a specific client.
  *			FIXME FIXME
  *
- * Description:	Send message to client(s).
+ * Description:	Send received frames to to client(s).
  *		We really don't care if anyone is listening or not.
  *		I don't even know if we can find out.
  *
@@ -539,13 +559,13 @@ void kisspt_send_rec_packet (int chan, int kiss_cmd, unsigned char *fbuf,  int f
 
 	if (err == -1 && errno == EWOULDBLOCK) {
 	  text_color_set (DW_COLOR_INFO);
-	  dw_printf ("KISS SEND - Discarding message because no one is listening.\n");
+	  dw_printf ("Discarding packet to client app via %s because no one is listening.\n", symlink_name[j]);
 	  dw_printf ("This happens when you use the -p option and don't read from the pseudo terminal.\n");
 	}
 	else if (err != kiss_len)
 	{
 	  text_color_set(DW_COLOR_ERROR);
-	  dw_printf ("\nError sending KISS message to client application on pseudo terminal.  fd=%d, len=%d, write returned %d, errno = %d\n\n",
+	  dw_printf ("\nError sending KISS frame to client application on pseudo terminal.  fd=%d, len=%d, write returned %d, errno = %d\n\n",
 		pt_master_fd[j], kiss_len, err, errno);
 	  perror ("pt write"); 
 	}
@@ -649,7 +669,7 @@ static int kisspt_get (int pty_index)
 	  {
 
 	    text_color_set(DW_COLOR_ERROR);
-	    dw_printf ("\nError receiving KISS message from client application.  Closing %s.\n\n", pt_slave_name[pty_index]);
+	    dw_printf ("\nError receiving KISS frame from client application.  Closing %s.\n\n", pt_slave_name[pty_index]);
 	    perror ("");
 
 	    close (pt_master_fd[pty_index]);
@@ -675,7 +695,7 @@ static int kisspt_get (int pty_index)
  *
  * Name:        kisspt_listen_thread
  *
- * Purpose:     Read messages from serial port KISS client application.
+ * Purpose:     Read KISS frames from serial port KISS client application.
  *
  * Global In:
  *
