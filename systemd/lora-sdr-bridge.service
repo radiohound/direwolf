@@ -1,0 +1,18 @@
+[Unit]
+Description=LoRa APRS SDR bridge (RTL-SDR via GNU Radio -> Dire Wolf)
+After=network.target direwolf.service
+Wants=direwolf.service
+
+# NOTE: Run either lora-kiss-bridge.service OR lora-sdr-bridge.service,
+# not both at the same time.  Both connect to the same LORAPORT on Dire Wolf.
+
+[Service]
+User=pi
+ExecStart=/usr/bin/python3 /usr/local/bin/lora_sdr_bridge.py -c /home/pi/lora.conf
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

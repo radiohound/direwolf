@@ -1,0 +1,15 @@
+[Unit]
+Description=LoRa APRS hardware bridge (SX126x/SX127x -> Dire Wolf)
+After=network.target direwolf.service
+Wants=direwolf.service
+
+[Service]
+User=pi
+ExecStart=/usr/bin/python3 /usr/local/bin/lora_kiss_bridge.py -c /home/pi/lora.conf
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
