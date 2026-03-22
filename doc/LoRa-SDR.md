@@ -36,19 +36,21 @@ RTL-SDR dongle
       v
 GNU Radio (gr-lora_sdr blocks)
       | demodulate Chirp Spread Spectrum
-      | decode LoRa frames
+      | decode LoRa frames  +  SNR from PDU metadata
       v
 lora_sdr_bridge.py
       | strip non-printable preamble bytes
+      | optionally prepend SNR=<value>\t
       | TNC2 text line over TCP
       v
-Dire Wolf  (LORAPORT — unchanged from hardware path)
-      |
+Dire Wolf  (LORAPORT)
+      | loratnc.c parses SNR prefix → sets signal level + spectrum label
+      v
   iGate / decoder
 ```
 
-The Dire Wolf side (`loratnc.c`, `LORAPORT`) is **identical** for both
-bridges.  Only the bridge script changes.
+The Dire Wolf `LORAPORT` interface is the same for both bridges.
+Only the bridge script and the SNR prefix in the wire format differ.
 
 ## Requirements
 
@@ -208,7 +210,13 @@ Expected output:
   [PASS] Empty/preamble-only packet not forwarded to Dire Wolf
 --- Test 5: TX from Dire Wolf logged and dropped ---
   [PASS] Bridge still operational after TX drop
---- Test 6: lora.conf SDR key parsing ---
+--- Test 6: SNR value forwarded to Dire Wolf ---
+  [PASS] Packet without SNR delivered unmodified
+  [PASS] Packet with SNR delivered
+  [PASS] SNR prefix present in forwarded line
+  [PASS] SNR value is correct
+  [PASS] TNC2 content intact after SNR prefix
+--- Test 7: lora.conf SDR key parsing ---
   [PASS] LORAFREQ parsed
   ...
 
