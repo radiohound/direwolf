@@ -20,8 +20,8 @@
  *              Add to direwolf.conf:
  *                  LORAPORT 8002
  *
- *              The bridge connects to this port.  Start lora_kiss_bridge.py
- *              before starting Dire Wolf.
+ *              Dire Wolf listens on this port; the bridge connects to it.
+ *              Start Dire Wolf before lora_kiss_bridge.py.
  *
  *--------------------------------------------------------------------*/
 
@@ -149,25 +149,47 @@ static void * lora_listen_thread (void *arg)
 	SOCKET srv_sock;
 	struct sockaddr_in srv_addr;
 	srv_sock = socket(AF_INET, SOCK_STREAM, 0);
+	if (srv_sock == INVALID_SOCKET) {
+	    text_color_set(DW_COLOR_ERROR);
+	    dw_printf ("LoRa bridge: socket() failed.\n");
+	    return (0);
+	}
 	int opt = 1;
 	setsockopt(srv_sock, SOL_SOCKET, SO_REUSEADDR, (char*)&opt, sizeof(opt));
 	memset(&srv_addr, 0, sizeof(srv_addr));
 	srv_addr.sin_family = AF_INET;
 	srv_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 	srv_addr.sin_port = htons(port);
-	bind(srv_sock, (struct sockaddr *)&srv_addr, sizeof(srv_addr));
+	if (bind(srv_sock, (struct sockaddr *)&srv_addr, sizeof(srv_addr)) != 0) {
+	    text_color_set(DW_COLOR_ERROR);
+	    dw_printf ("LoRa bridge: bind() failed on port %d — port already in use?\n", port);
+	    closesocket(srv_sock);
+	    return (0);
+	}
 	listen(srv_sock, 1);
 #else
 	int srv_sock;
 	struct sockaddr_in srv_addr;
 	srv_sock = socket(AF_INET, SOCK_STREAM, 0);
+	if (srv_sock < 0) {
+	    text_color_set(DW_COLOR_ERROR);
+	    dw_printf ("LoRa bridge: socket() failed: %s\n", strerror(errno));
+	    return (NULL);
+	}
 	int opt = 1;
 	setsockopt(srv_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 	memset(&srv_addr, 0, sizeof(srv_addr));
 	srv_addr.sin_family = AF_INET;
 	srv_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 	srv_addr.sin_port = htons(port);
-	bind(srv_sock, (struct sockaddr *)&srv_addr, sizeof(srv_addr));
+	if (bind(srv_sock, (struct sockaddr *)&srv_addr, sizeof(srv_addr)) != 0) {
+	    text_color_set(DW_COLOR_ERROR);
+	    dw_printf ("LoRa bridge: bind() failed on port %d — %s\n"
+	               "             Is another process using port %d?\n",
+	               port, strerror(errno), port);
+	    close(srv_sock);
+	    return (NULL);
+	}
 	listen(srv_sock, 1);
 #endif
 
@@ -189,6 +211,7 @@ static void * lora_listen_thread (void *arg)
 	    /* Read TNC2 text lines until bridge disconnects. */
 	    char buf[512];
 	    int  pos = 0;
+	    int  discard = 0;   /* non-zero while draining an overlong line */
 
 	    while (1) {
 	        char ch;
@@ -201,7 +224,20 @@ static void * lora_listen_thread (void *arg)
 
 	        if (ch == '\r') continue;   /* ignore CR */
 
+	        if (discard) {
+	            if (ch == '\n') discard = 0;   /* end of overlong line */
+	            continue;
+	        }
+
 	        if (ch == '\n' || pos >= (int)sizeof(buf) - 1) {
+	            if (pos >= (int)sizeof(buf) - 1 && ch != '\n') {
+	                text_color_set(DW_COLOR_ERROR);
+	                dw_printf ("LoRa bridge: line too long (>%d chars) — discarded.\n",
+	                           (int)sizeof(buf) - 1);
+	                pos = 0;
+	                discard = 1;
+	                continue;
+	            }
 	            buf[pos] = '\0';
 	            pos = 0;
 
