@@ -131,6 +131,7 @@
 #include "dlq.h"		// for fec_type_t definition.
 #include "deviceid.h"
 #include "nettnc.h"
+#include "loratnc.h"
 
 
 //static int idx_decoded = 0;
@@ -1024,6 +1025,7 @@ int main (int argc, char *argv[])
  * I put it here so channel properties would come out in right order.
  */
 	nettnc_init (&audio_config);
+	loratnc_init (&audio_config, &misc_config);
 
 /*
  * Initialize the touch tone decoder & APRStt gateway.

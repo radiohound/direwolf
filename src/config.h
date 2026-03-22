@@ -36,6 +36,10 @@ struct misc_config_s {
 
 	int agwpe_port;		/* TCP Port number for the "AGW TCPIP Socket Interface" */
 
+	int lora_port;		/* TCP Port number for LoRa APRS bridge (LORAPORT). */
+				/* 0 means not configured. */
+				/* lora_kiss_bridge.py connects here and exchanges TNC2 text lines. */
+
 	// Previously we allowed only a single TCP port for KISS.
 	// An increasing number of people want to run multiple radios.
 	// Unfortunately, most applications don't know how to deal with multi-radio TNCs.

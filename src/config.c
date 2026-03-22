@@ -5022,6 +5022,35 @@ void config_init (char *fname, struct audio_s *p_audio_config,
 	  }
 
 /*
+ * LORAPORT port		- TCP port number for LoRa APRS bridge.
+ *
+ * lora_kiss_bridge.py connects here and exchanges raw TNC2 text lines.
+ * Dire Wolf assigns the next available channel number to this interface
+ * and handles all APRS processing (iGate, digipeating, beaconing).
+ *
+ * Add to direwolf.conf alongside your MYCALL, IGSERVER, etc.:
+ *   LORAPORT 8002
+ */
+
+	  else if (strcasecmp(t, "LORAPORT") == 0) {
+
+	    t = split(NULL, 0);
+	    if (t == NULL) {
+	      dw_printf ("Line %d: Missing port number for LORAPORT command.\n", line);
+	    }
+	    else {
+	      int n = atoi(t);
+	      if (n < 1 || n > 65535) {
+	        dw_printf ("Line %d: Invalid port number %d for LORAPORT. Must be in range 1 - 65535.\n", line, n);
+	      }
+	      else {
+	        p_misc_config->lora_port = n;
+	        dw_printf ("LoRa APRS bridge port: %d\n", p_misc_config->lora_port);
+	      }
+	    }
+	  }
+
+/*
  * NULLMODEM name [ speed ]	- Device name for serial port or our end of the virtual "null modem"
  * SERIALKISS name  [ speed ]
  *

@@ -1,0 +1,195 @@
+# =============================================================================
+# LoRa APRS — Hardware Profiles
+# =============================================================================
+# Maps hardware profile names to the physical LoRa module wiring on a
+# Raspberry Pi (or compatible SBC).  Pin numbers are BCM GPIO numbers.
+#
+# This file contains ONLY hardware definitions — chip type, SPI bus,
+# and GPIO pin assignments.  All RF parameters and station configuration
+# belong in lora.conf (alongside direwolf.conf in your home directory).
+#
+# Chip options:  sx1262  |  sx1276  |  sx1278  |  external_kiss
+#
+# To add your own hardware, copy an existing profile and adjust the pins.
+# =============================================================================
+
+profiles:
+
+  # ---------------------------------------------------------------------------
+  # MeshAdv-Pi Hat — Ebyte E22-900M30S (SX1262, 900 MHz)
+  # https://github.com/chrismyers2000/MeshAdv-Pi-Hat
+  # ---------------------------------------------------------------------------
+  meshadv:
+    description: "MeshAdv-Pi Hat — Ebyte E22-900M30S (SX1262, 900 MHz, 30 dBm)"
+    chip: sx1262
+    spi:
+      bus: 0
+      device: 0
+      max_speed_hz: 2000000
+    pins:
+      cs:     21         # SPI chip-select (bit-banged, BCM 21)
+      irq:    16         # DIO1 — RX/TX done interrupt
+      busy:   20         # BUSY line
+      reset:  18         # Active-low hardware reset
+      tx_en:  13         # TX-enable PA switch
+      rx_en:  12         # RX-enable LNA switch
+    tcxo:
+      enabled: true
+      voltage: 1.8       # DIO3 drives TCXO at 1.8 V
+      delay_ms: 5
+    max_tx_power_dbm: 22
+
+  # ---------------------------------------------------------------------------
+  # Ebyte E22-900M30S — standalone breakout wired to Raspberry Pi
+  # https://www.cdebyte.com/products/E22-900M30S
+  #
+  #   E22 pin   Signal    RPi BCM   RPi physical
+  #   M0/NSS    SPI CS    8         Pin 24  (SPI0 CE0)
+  #   SCK       SPI CLK   11        Pin 23
+  #   MOSI      SPI MOSI  10        Pin 19
+  #   MISO      SPI MISO  9         Pin 21
+  #   DIO1      IRQ       24        Pin 18
+  #   BUSY      BUSY      23        Pin 16
+  #   RST       RESET     25        Pin 22
+  #   RXEN      RX enable 22        Pin 15
+  # ---------------------------------------------------------------------------
+  e22_900m30s:
+    description: "Ebyte E22-900M30S standalone breakout (SX1262, 868/915 MHz, 30 dBm)"
+    chip: sx1262
+    spi:
+      bus: 0
+      device: 0
+      max_speed_hz: 2000000
+    pins:
+      cs:     8
+      irq:    24
+      busy:   23
+      reset:  25
+      tx_en:  null         # DIO2 → TXEN handled internally by module
+      rx_en:  22
+    tcxo:
+      enabled: true
+      voltage: 1.8
+      delay_ms: 5
+    max_tx_power_dbm: 22
+
+  # ---------------------------------------------------------------------------
+  # Ebyte E22-400M30S — standalone breakout (SX1268, 433/470 MHz)
+  # https://www.cdebyte.com/products/E22-400M30S
+  # Note: SX1268 uses identical register map to SX1262 — same driver.
+  #
+  #   E22 pin   Signal    RPi BCM   RPi physical
+  #   NSS       SPI CS    8         Pin 24
+  #   SCK       SPI CLK   11        Pin 23
+  #   MOSI      SPI MOSI  10        Pin 19
+  #   MISO      SPI MISO  9         Pin 21
+  #   DIO1      IRQ       24        Pin 18
+  #   BUSY      BUSY      23        Pin 16
+  #   RST       RESET     25        Pin 22
+  #   TXEN      TX enable 17        Pin 11
+  #   RXEN      RX enable 27        Pin 13
+  # ---------------------------------------------------------------------------
+  e22_400m30s:
+    description: "Ebyte E22-400M30S standalone breakout (SX1268, 433/470 MHz, 30 dBm)"
+    chip: sx1262             # SX1268 uses the same driver as SX1262
+    spi:
+      bus: 0
+      device: 0
+      max_speed_hz: 2000000
+    pins:
+      cs:     8
+      irq:    24
+      busy:   23
+      reset:  25
+      tx_en:  17             # Must be MCU-driven on 400M30S
+      rx_en:  27
+    tcxo:
+      enabled: true
+      voltage: 1.8
+      delay_ms: 5
+    max_tx_power_dbm: 22
+
+  # ---------------------------------------------------------------------------
+  # Generic Ebyte E22 breakout (SX1262)
+  # ---------------------------------------------------------------------------
+  ebyte_e22:
+    description: "Ebyte E22 generic breakout (SX1262)"
+    chip: sx1262
+    spi:
+      bus: 0
+      device: 0
+      max_speed_hz: 2000000
+    pins:
+      cs:     8
+      irq:    24
+      busy:   23
+      reset:  25
+      tx_en:  null
+      rx_en:  null
+    tcxo:
+      enabled: true
+      voltage: 1.8
+      delay_ms: 5
+    max_tx_power_dbm: 22
+
+  # ---------------------------------------------------------------------------
+  # TTGO / Heltec LoRa32 via USB-serial KISS TNC
+  # Use when the LoRa module is on an external MCU exposing KISS over UART.
+  # ---------------------------------------------------------------------------
+  ttgo_uart:
+    description: "TTGO LoRa32 / Heltec over USB-UART KISS TNC"
+    chip: external_kiss
+    serial:
+      port: /dev/ttyUSB0
+      baud: 115200
+    pins: {}
+    max_tx_power_dbm: 20
+
+  # ---------------------------------------------------------------------------
+  # Digital Concepts LoRa-Pi — RFM95W / RFM98W (SX1276)
+  # https://digitalconcepts.net.au/pcbs/lorapi
+  #
+  #   Function  RPi BCM   RPi physical
+  #   CS/NSS    8         Pin 24  (SPI0 CE0)
+  #   RESET     22        Pin 15
+  #   DIO0/IRQ  25        Pin 22
+  # ---------------------------------------------------------------------------
+  lorapi_rfm95w:
+    description: "Digital Concepts LoRa-Pi — RFM95W/RFM98W (SX1276)"
+    chip: sx1276
+    spi:
+      bus: 0
+      device: 1
+      max_speed_hz: 5000000
+    pins:
+      cs:     7
+      reset:  22
+      irq:    null         # Use register polling — GPIO interrupt not needed
+      busy:   null         # SX1276 has no BUSY pin
+      tx_en:  null
+      rx_en:  null
+    pa_boost: false          # RFO pin routed to antenna on this board
+    tcxo:
+      enabled: false
+    max_tx_power_dbm: 17
+
+  # ---------------------------------------------------------------------------
+  # Generic SX1276 / SX1278 (Ra-02, RFM95W, etc.)
+  # ---------------------------------------------------------------------------
+  generic_sx1276:
+    description: "Generic SX1276/SX1278 breakout (Ra-02, RFM95W, etc.)"
+    chip: sx1276
+    spi:
+      bus: 0
+      device: 0
+      max_speed_hz: 5000000
+    pins:
+      cs:     8
+      irq:    24             # DIO0 on SX1276
+      busy:   null
+      reset:  25
+      tx_en:  null
+      rx_en:  null
+    tcxo:
+      enabled: false
+    max_tx_power_dbm: 17

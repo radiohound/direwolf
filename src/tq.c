@@ -53,6 +53,7 @@
 #include "igate.h"
 #include "dtime_now.h"
 #include "nettnc.h"
+#include "loratnc.h"
 
 
 static packet_t queue_head[MAX_RADIO_CHANS][TQ_NUM_PRIO];	/* Head of linked list for each queue. */
@@ -289,6 +290,15 @@ void tq_append (int chan, int prio, packet_t pp)
 	    dw_printf ("\n");
 
 	    igate_send_rec_packet (chan, pp);
+	  }
+	  else if (chan == g_lora_chan) {	// LoRa bridge
+	    dw_printf ("[%d>lora%s] ", chan, ts);
+	    dw_printf ("%s", stemp);
+	    ax25_safe_print ((char *)pinfo, info_len, ! ax25_is_aprs(pp));
+	    dw_printf ("\n");
+
+	    loratnc_send_packet (chan, pp);
+
 	  }
 	  else {	// network TNC
 	    dw_printf ("[%d>nt%s] ", chan, ts);
