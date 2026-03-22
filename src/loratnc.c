@@ -244,21 +244,64 @@ static void * lora_listen_thread (void *arg)
 	            if (buf[0] == '\0') continue;    /* skip blank lines */
 	            if (buf[0] == '#')  continue;    /* skip comment lines */
 
+	            /*
+	             * Optional SNR prefix written by lora_sdr_bridge.py:
+	             *   "SNR=<float>\t<TNC2 line>"
+	             * If present, parse the SNR value and advance past the tab
+	             * so ax25_from_text sees only the TNC2 text.
+	             */
+	            float snr_db  = 0.0f;
+	            int   have_snr = 0;
+	            char *tnc2_start = buf;
+
+	            if (strncmp(buf, "SNR=", 4) == 0) {
+	                char *tab = strchr(buf + 4, '\t');
+	                if (tab != NULL) {
+	                    snr_db    = (float)atof(buf + 4);
+	                    have_snr  = 1;
+	                    tnc2_start = tab + 1;
+	                }
+	            }
+
 	            /* Convert TNC2 text to packet object. */
-	            packet_t pp = ax25_from_text(buf, 1);
+	            packet_t pp = ax25_from_text(tnc2_start, 1);
 	            if (pp == NULL) {
 	                text_color_set(DW_COLOR_ERROR);
-	                dw_printf ("LoRa bridge: failed to parse: %s\n", buf);
+	                dw_printf ("LoRa bridge: failed to parse: %s\n", tnc2_start);
 	                continue;
 	            }
 
 	            /* Inject into Dire Wolf's received-frame queue. */
 	            alevel_t alevel;
 	            memset(&alevel, 0, sizeof(alevel));
+	            if (have_snr) {
+	                /*
+	                 * Store SNR as the signal level.  Direwolf displays this as
+	                 * "audio level = N" in the decode line.  We use mark=-1 /
+	                 * space=-1 (PSK-style) so ax25_alevel_to_text shows a single
+	                 * value rather than "rec(mark/space)".
+	                 *
+	                 * Offset by +30 so that a 0 dB SNR displays as 30 and
+	                 * typical weak signals (-20 dB) don't go negative and
+	                 * disappear from the display.  subchan=-3 suppresses the
+	                 * "audio level too low" warning for non-audio sources.
+	                 */
+	                int level = (int)snr_db + 30;
+	                alevel.rec   = (level > 0) ? level : 0;
+	                alevel.mark  = -1;
+	                alevel.space = -1;
+	            }
+
 	            fec_type_t fec_type = fec_type_none;
 	            retry_t retries;
 	            memset(&retries, 0, sizeof(retries));
-	            char spectrum[] = "LoRa";
+
+	            char spectrum[32];
+	            if (have_snr) {
+	                snprintf(spectrum, sizeof(spectrum), "LoRa SNR=%.1fdB", snr_db);
+	            } else {
+	                strncpy(spectrum, "LoRa", sizeof(spectrum));
+	            }
 
 	            dlq_rec_frame(g_lora_chan, -3, 0, pp, alevel,
 	                          fec_type, retries, spectrum);

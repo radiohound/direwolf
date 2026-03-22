@@ -198,7 +198,7 @@ class LoRaSdrBridge:
         )
         self._fg    = None   # set in start()
 
-    def _on_packet(self, payload_bytes):
+    def _on_packet(self, payload_bytes, snr=None):
         """Called by the GNU Radio flowgraph for each decoded LoRa frame."""
         # Strip leading non-printable / non-ASCII bytes (preamble artifacts)
         clean = payload_bytes.lstrip(
@@ -217,7 +217,14 @@ class LoRaSdrBridge:
         if not line:
             return
 
-        log.info("RX [LoRa SDR] -> Dire Wolf: %s", line)
+        snr_str = f" SNR={snr:.1f}dB" if snr is not None else ""
+        log.info("RX [LoRa SDR]%s -> Dire Wolf: %s", snr_str, line)
+
+        # Prepend "SNR=<value>\t" so loratnc.c can populate alevel and the
+        # spectrum string for the decoded-frame display.
+        if snr is not None:
+            line = f"SNR={snr:.1f}\t{line}"
+
         self._dw.send_tnc2(line)
 
     def start(self):

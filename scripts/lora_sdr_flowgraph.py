@@ -104,6 +104,14 @@ class LoRaSdrFlowgraph:
         decimation  = max(1, self._samp_rate // bw_hz)
         actual_rate = bw_hz * decimation
 
+        if actual_rate != self._samp_rate:
+            log.warning(
+                "Requested sample rate %d sps is not an integer multiple of "
+                "BW (%d Hz) — adjusted to %d sps.  Set SDRSAMPLERATE to a "
+                "multiple of %d to silence this warning.",
+                self._samp_rate, bw_hz, actual_rate, bw_hz
+            )
+
         log.debug(
             "Building SDR flowgraph: %.3f MHz, BW=%d kHz, SF=%d, CR=4/%d, "
             "SW=0x%02X, gain=%g dB, rate=%d sps",
@@ -163,11 +171,11 @@ class LoRaSdrFlowgraph:
         self._msg_sink = msg_sink
         log.debug("SDR flowgraph built successfully")
 
-    def _on_packet(self, payload_bytes):
+    def _on_packet(self, payload_bytes, snr=None):
         """Called by the message sink block for each decoded LoRa frame."""
         if self._callback:
             try:
-                self._callback(payload_bytes)
+                self._callback(payload_bytes, snr=snr)
             except Exception:
                 log.exception("SDR callback raised an exception")
 
@@ -235,11 +243,26 @@ class _LoRaMessageSink:
 
                 def _handle_msg(self_, msg):
                     try:
+                        meta_pmt    = pmt.car(msg)
                         payload_pmt = pmt.cdr(msg)
                         payload = bytes(
                             pmt.u8vector_elements(payload_pmt)
                         )
-                        self_._cb(payload)
+
+                        # Extract SNR from PDU metadata if available.
+                        # gr-lora_sdr stores it as a real-valued PMT under
+                        # the key "snr" in the metadata dict.
+                        snr = None
+                        snr_key = pmt.intern("snr")
+                        if (pmt.is_dict(meta_pmt) and
+                                pmt.dict_has_key(meta_pmt, snr_key)):
+                            snr_pmt = pmt.dict_ref(
+                                meta_pmt, snr_key, pmt.PMT_NIL
+                            )
+                            if pmt.is_real(snr_pmt):
+                                snr = pmt.to_double(snr_pmt)
+
+                        self_._cb(payload, snr=snr)
                     except Exception:
                         log.exception("Error handling LoRa PDU message")
 
