@@ -138,15 +138,18 @@ class LoRaSdrFlowgraph:
         lpf = grfilter.fir_filter_ccf(decimation, lpf_taps)
 
         # --- gr-lora_sdr receiver ---
+        # LoRa APRS does not use the LoRa MAC CRC — the payload already carries
+        # an AX.25 FCS.  has_crc must be False; setting it True causes gr-lora_sdr
+        # to reject every valid LoRa APRS packet as a CRC failure.
         lora_rx = lora_sdr.lora_receiver(
-            bw_hz,          # bandwidth Hz
-            [self._sw],     # sync words list
-            [self._sf],     # spreading factors list
-            actual_rate / decimation,  # input sample rate to lora block
-            self._cr - 4,  # cr parameter: 1=4/5 .. 4=4/8
-            False,          # has_crc
-            1,              # multi_control
-            False,          # lowDataRate
+            bw_hz,                    # bandwidth Hz
+            [self._sw],               # sync words list
+            [self._sf],               # spreading factors list
+            actual_rate / decimation, # input sample rate to lora block
+            self._cr - 4,             # cr offset: 1=4/5, 2=4/6, 3=4/7, 4=4/8
+            False,                    # has_crc — LoRa APRS never uses LoRa CRC
+            1,                        # multi_control
+            False,                    # lowDataRate
         )
 
         # --- Message sink: delivers decoded frames to Python ---
