@@ -8,6 +8,11 @@ z*
 *.stackdump
 *.wav
 
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
 
 # Object files
 *.o
