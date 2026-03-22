@@ -272,9 +272,33 @@ time.sleep(0.5)
 rx5 = dw.pop_received()
 check("Bridge still operational after TX drop", len(rx5) >= 1)
 
-# --- Test 6: Config parsing -------------------------------------------------
+# --- Test 6: SNR forwarding ------------------------------------------------
 
-print("\n--- Test 6: lora.conf SDR key parsing ---")
+print("\n--- Test 6: SNR value forwarded to Dire Wolf ---")
+
+PKT6 = b"W6SNR-1>APRS:SNR test packet"
+bridge._fg.inject(PKT6)             # no SNR — baseline, line unmodified
+time.sleep(0.5)
+rx6a = dw.pop_received()
+check("Packet without SNR delivered unmodified",
+      len(rx6a) == 1 and rx6a[0] == PKT6.decode(), f"got {rx6a}")
+
+bridge._on_packet(PKT6, snr=-7.5)  # with SNR — line must carry SNR= prefix
+time.sleep(0.5)
+rx6b = dw.pop_received()
+check("Packet with SNR delivered",
+      len(rx6b) == 1, f"got {len(rx6b)}")
+if rx6b:
+    check("SNR prefix present in forwarded line",
+          rx6b[0].startswith("SNR="), f"got: {rx6b[0]!r}")
+    check("SNR value is correct",
+          "SNR=-7.5" in rx6b[0], f"got: {rx6b[0]!r}")
+    check("TNC2 content intact after SNR prefix",
+          rx6b[0].endswith(PKT6.decode()), f"got: {rx6b[0]!r}")
+
+# --- Test 7: Config parsing -------------------------------------------------
+
+print("\n--- Test 7: lora.conf SDR key parsing ---")
 
 check("LORAFREQ parsed", cfg.get("lorafreq") == "433.775")
 check("LORASF parsed",   cfg.get("lorasf")   == "12")

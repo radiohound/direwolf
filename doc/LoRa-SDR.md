@@ -212,7 +212,7 @@ Expected output:
   [PASS] LORAFREQ parsed
   ...
 
-=== 13/13 tests passed ===
+=== 19/19 tests passed ===
 ```
 
 ## Troubleshooting
@@ -254,9 +254,12 @@ the flowgraph block names in `lora_sdr_flowgraph.py` will need adjustment.
 
 ## Relationship to the hardware bridge
 
-Both bridges connect to Dire Wolf using identical TNC2-over-TCP protocol
-on `LORAPORT`.  The C code in Dire Wolf (`loratnc.c`) is shared and
-unchanged between both paths.  To remove the SDR bridge entirely, delete:
+Both bridges connect to Dire Wolf using the same TNC2-over-TCP protocol
+on `LORAPORT`.  The C code in Dire Wolf (`loratnc.c`) is shared between
+both paths.  The SDR bridge optionally prefixes each line with SNR
+information (`SNR=<value>\t`) so that Dire Wolf can display signal
+quality alongside the decoded packet.  To remove the SDR bridge entirely,
+delete:
 
 ```
 scripts/lora_sdr_bridge.py
