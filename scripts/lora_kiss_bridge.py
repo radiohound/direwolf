@@ -438,8 +438,11 @@ class LoRaBridge:
         self._radio.start_receive(callback=self._on_rx_from_lora)
 
         log.info("Bridge running")
-        signal.signal(signal.SIGINT,  self._shutdown)
-        signal.signal(signal.SIGTERM, self._shutdown)
+        try:
+            signal.signal(signal.SIGINT,  self._shutdown)
+            signal.signal(signal.SIGTERM, self._shutdown)
+        except ValueError:
+            pass  # Not main thread (e.g. during testing)
 
         while True:
             time.sleep(60)
