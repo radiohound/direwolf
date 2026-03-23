@@ -134,43 +134,47 @@ class LoRaSdrFlowgraph:
         src.set_bb_gain(20)
         src.set_bandwidth(bw_hz * 2)
 
-        # frame_sync needs 2^sf * (samp_rate/bw) samples per call.
-        # osmosdr ignores set_min_output_buffer, so insert a copy block and
-        # set the buffer there — matching the pattern in the gr-lora_sdr
-        # simulation example.
-        buf_size = int(2**self._sf * actual_rate / bw_hz * 1.5)
+        # frame_sync needs 2^sf * os_factor samples per work() call.
+        # lora_sdr_lora_rx is a hier_block2 and creates its own internal
+        # boundary buffer, so set_min_output_buffer on an upstream copy block
+        # does not reach frame_sync.  Instantiate the individual demodulator
+        # blocks directly so our buffer feeds frame_sync with no indirection.
+        os_factor = int(actual_rate / bw_hz)
+        buf_size  = int(2**self._sf * os_factor * 1.5)
+
+        # Buffer block: its output IS the input buffer of frame_sync.
         buf = blocks.copy(gr.sizeof_gr_complex)
         buf.set_min_output_buffer(buf_size)
 
-        # --- gr-lora_sdr receiver ---
-        # lora_sdr_lora_rx is a hier_block2 that handles all LoRa demodulation
-        # internally (frame sync, FFT demod, FEC, dewhitening, CRC verify).
-        # It expects IQ samples at actual_rate and decimates internally.
-        #
+        # --- gr-lora_sdr demodulator chain (individual blocks) ---
         # LoRa APRS does not use the LoRa MAC CRC — the payload already carries
         # an AX.25 FCS.  has_crc must be False; setting it True causes gr-lora_sdr
         # to reject every valid LoRa APRS packet as a CRC failure.
-        lora_rx = lora_sdr.lora_sdr_lora_rx(
-            center_freq   = self._freq_hz,
-            bw            = bw_hz,
-            cr            = self._cr - 4,  # 1=4/5, 2=4/6, 3=4/7, 4=4/8
-            has_crc       = False,         # LoRa APRS: AX.25 FCS, not LoRa CRC
-            impl_head     = False,         # explicit header
-            pay_len       = 255,           # max payload length
-            samp_rate     = actual_rate,
-            sf            = self._sf,
-            sync_word     = [self._sw],
-            soft_decoding = False,
-            ldro_mode     = 2,             # auto-detect LDRO
-            print_rx      = [False, False],# suppress stdout; we handle logging
+        cr = self._cr - 4   # API uses 1=4/5, 2=4/6, 3=4/7, 4=4/8
+        frame_sync     = lora_sdr.frame_sync(
+            self._freq_hz, bw_hz, self._sf, False, [self._sw], os_factor, 8
         )
+        fft_demod      = lora_sdr.fft_demod(False, True)
+        gray_mapping   = lora_sdr.gray_mapping(False)
+        deinterleaver  = lora_sdr.deinterleaver(False)
+        hamming_dec    = lora_sdr.hamming_dec(False)
+        header_decoder = lora_sdr.header_decoder(
+            False, cr, 255, False, 2, False
+        )
+        dewhitening    = lora_sdr.dewhitening()
+        crc_verif      = lora_sdr.crc_verif(False, False)
 
         # --- Message sink: delivers decoded frames to Python ---
         msg_sink = _LoRaMessageSink(callback=self._on_packet)
 
-        # Connect: src -> buf -> lora_rx; decoded frames on message port "out"
-        tb.connect(src, buf, lora_rx)
-        tb.msg_connect(lora_rx, "out", msg_sink, "in")
+        # Stream chain: src -> buf -> frame_sync -> ... -> crc_verif
+        tb.connect(src, buf, frame_sync, fft_demod, gray_mapping,
+                   deinterleaver, hamming_dec, header_decoder,
+                   dewhitening, crc_verif)
+
+        # frame_info feedback loop and PDU output
+        tb.msg_connect(header_decoder, "frame_info", frame_sync, "frame_info")
+        tb.msg_connect(crc_verif, "msg", msg_sink, "in")
 
         self._tb       = tb
         self._msg_sink = msg_sink
