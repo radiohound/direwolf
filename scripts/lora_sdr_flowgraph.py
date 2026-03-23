@@ -162,10 +162,10 @@ class LoRaSdrFlowgraph:
         deinterleaver  = lora_sdr.deinterleaver(False)
         hamming_dec    = lora_sdr.hamming_dec(False)
         header_decoder = lora_sdr.header_decoder(
-            False, cr, 255, False, 2, True   # True = print header (debug)
+            False, cr, 255, False, 2, False
         )
         dewhitening    = lora_sdr.dewhitening()
-        crc_verif      = lora_sdr.crc_verif(True, False)  # True = print payload (debug)
+        crc_verif      = lora_sdr.crc_verif(False, False)
 
         # --- Message sink: delivers decoded frames to Python ---
         msg_sink = _LoRaMessageSink(callback=self._on_packet)
@@ -257,7 +257,6 @@ class _LoRaMessageSink:
 
                 def _handle_msg(self_, msg):
                     try:
-                        log.debug("DEBUG _handle_msg: raw msg = %s", pmt.write_string(msg))
                         meta_pmt    = pmt.car(msg)
                         payload_pmt = pmt.cdr(msg)
                         payload = bytes(
