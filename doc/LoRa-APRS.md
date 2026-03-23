@@ -163,7 +163,7 @@ sudo systemctl start lora-kiss-bridge direwolf
 |--------|-----------|-------|
 | Region 1 (Europe, Africa, Middle East) | 433.775 MHz | Standard |
 | Region 3 (Asia-Pacific) | 433.775 MHz | Standard |
-| Region 2 (Americas) | 915.000 MHz | Experimental — check local rules |
+| Region 2 (Americas) | 433.775 MHz | Standard |
 
 Standard parameters: SF12, BW125, CR4/5, sync word 0x12.
 
