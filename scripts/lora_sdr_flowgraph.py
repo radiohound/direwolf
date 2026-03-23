@@ -257,31 +257,21 @@ class _LoRaMessageSink:
 
                 def _handle_msg(self_, msg):
                     try:
-                        # GR 3.10 pybind11: pmt.car()/cdr() trigger a
-                        # UTF-8 decode of the entire cons pair (including
-                        # binary payload bytes) and raise UnicodeDecodeError.
-                        # pmt.to_python() converts to native Python objects
-                        # without UTF-8 interpretation.
-                        py_msg = pmt.to_python(msg)
-
-                        # PDU = (meta_dict, payload_bytes_or_tuple)
-                        if not (isinstance(py_msg, (tuple, list))
-                                and len(py_msg) == 2):
-                            log.warning("Unexpected PDU format: %s",
-                                        type(py_msg))
-                            return
-
-                        meta, payload_data = py_msg
-                        payload = (payload_data if isinstance(payload_data, bytes)
-                                   else bytes(payload_data))
-
-                        # Extract SNR from metadata dict if present.
+                        # GR 3.10 Python pmt bindings raise UnicodeDecodeError
+                        # when traversing PMTs that contain binary payloads
+                        # (pmt.car, pmt.cdr, pmt.to_python all affected).
+                        # pmt.u8vector_elements() returns a plain tuple of
+                        # ints and never touches string encoding — use it
+                        # directly on the cdr without going through car first.
                         snr = None
-                        if isinstance(meta, dict) and "snr" in meta:
-                            try:
-                                snr = float(meta["snr"])
-                            except (TypeError, ValueError):
-                                pass
+
+                        # Try standard PDU: cons(meta_dict, u8vector)
+                        try:
+                            payload_pmt = pmt.cdr(msg)
+                            payload = bytes(pmt.u8vector_elements(payload_pmt))
+                        except Exception:
+                            # Fallback: msg might be a bare u8vector
+                            payload = bytes(pmt.u8vector_elements(msg))
 
                         self_._cb(payload, snr=snr)
                     except Exception:
