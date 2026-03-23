@@ -200,10 +200,16 @@ class LoRaSdrBridge:
 
     def _on_packet(self, payload_bytes, snr=None):
         """Called by the GNU Radio flowgraph for each decoded LoRa frame."""
-        # Strip leading non-printable / non-ASCII bytes (preamble artifacts)
-        clean = payload_bytes.lstrip(
-            bytes(range(0, 32)) + bytes(range(128, 256))
-        )
+        # LoRa APRS preamble varies by implementation: common sequences include
+        # b'<\xff', b'\xff', etc.  Scan forward to the first letter or digit
+        # (all valid TNC2 source callsigns begin with A-Z or 0-9).
+        clean = b''
+        for i, b in enumerate(payload_bytes):
+            if (0x30 <= b <= 0x39 or   # 0-9
+                    0x41 <= b <= 0x5a or   # A-Z
+                    0x61 <= b <= 0x7a):    # a-z
+                clean = payload_bytes[i:]
+                break
         if not clean:
             log.debug("Received empty or all-preamble packet — skipped")
             return
