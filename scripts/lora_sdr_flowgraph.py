@@ -257,23 +257,29 @@ class _LoRaMessageSink:
 
                 def _handle_msg(self_, msg):
                     try:
-                        # GR 3.10 Python pmt bindings raise UnicodeDecodeError
-                        # when traversing PMTs that contain binary payloads
-                        # (pmt.car, pmt.cdr, pmt.to_python all affected).
-                        # pmt.u8vector_elements() returns a plain tuple of
-                        # ints and never touches string encoding — use it
-                        # directly on the cdr without going through car first.
-                        snr = None
+                        # Root cause: the PDU metadata dict contains a PMT
+                        # symbol whose value is binary (0xff bytes).
+                        # pmt.symbol_to_string() decodes it as UTF-8 →
+                        # UnicodeDecodeError (a ValueError subclass), which
+                        # pmt_to_python silently catches → fallthrough error.
+                        # Fix: never call pmt.car() or pmt.to_python() on the
+                        # full message.  Extract only the cdr (u8vector
+                        # payload).  pmt.cdr() may auto-convert to numpy in
+                        # GR 3.10; handle both cases.
+                        payload_raw = pmt.cdr(msg)
 
-                        # Try standard PDU: cons(meta_dict, u8vector)
-                        try:
-                            payload_pmt = pmt.cdr(msg)
-                            payload = bytes(pmt.u8vector_elements(payload_pmt))
-                        except Exception:
-                            # Fallback: msg might be a bare u8vector
-                            payload = bytes(pmt.u8vector_elements(msg))
+                        # If bindings returned a numpy array, use tobytes();
+                        # otherwise call u8vector_elements() on the pmt.
+                        if hasattr(payload_raw, 'tobytes'):
+                            payload = payload_raw.tobytes()
+                        else:
+                            try:
+                                payload = bytes(
+                                    pmt.u8vector_elements(payload_raw))
+                            except Exception:
+                                payload = bytes(bytearray(payload_raw))
 
-                        self_._cb(payload, snr=snr)
+                        self_._cb(payload, snr=None)
                     except Exception:
                         log.exception("Error handling LoRa PDU message")
 
