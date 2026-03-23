@@ -134,19 +134,19 @@ class LoRaSdrFlowgraph:
         src.set_bb_gain(20)
         src.set_bandwidth(bw_hz * 2)
 
-        # frame_sync needs 2^sf * os_factor samples per work() call.
-        # lora_sdr_lora_rx is a hier_block2 and creates its own internal
-        # boundary buffer, so set_min_output_buffer on an upstream copy block
-        # does not reach frame_sync.  Instantiate the individual demodulator
-        # blocks directly so our buffer feeds frame_sync with no indirection.
-        os_factor = int(actual_rate / bw_hz)
         # frame_sync needs 2^sf * os_factor items per work() call.
-        # set_min_output_buffer takes BYTES not items — multiply by item size.
+        # In GR 3.10, blocks.copy is a zero-copy alias and does NOT create
+        # a real output buffer — set_min_output_buffer on it is ignored and
+        # frame_sync's input stays at the default 8192 items.
+        # Use multiply_const_cc(1.0) instead: it performs actual computation
+        # so GR allocates a real output buffer and honours the size request.
+        # set_min_output_buffer takes BYTES — multiply buf_items by item size.
+        os_factor = int(actual_rate / bw_hz)
         buf_items = int(2**self._sf * os_factor * 1.5)
         buf_bytes = buf_items * gr.sizeof_gr_complex
 
-        # Buffer block: its output IS the input buffer of frame_sync.
-        buf = blocks.copy(gr.sizeof_gr_complex)
+        # Buffer block: multiply by 1.0 (identity) — forces real buffer alloc.
+        buf = blocks.multiply_const_cc(1.0)
         buf.set_min_output_buffer(buf_bytes)
 
         # --- gr-lora_sdr demodulator chain (individual blocks) ---
