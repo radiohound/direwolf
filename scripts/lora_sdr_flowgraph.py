@@ -172,9 +172,11 @@ class LoRaSdrFlowgraph:
                    deinterleaver, hamming_dec, header_decoder,
                    dewhitening, crc_verif)
 
-        # frame_info feedback loop and PDU output
+        # frame_info feedback loop and PDU output.
+        # Pass msg_sink._block (the actual gr.basic_block) — swig's msg_connect
+        # needs the real C++ object, not our Python wrapper.
         tb.msg_connect(header_decoder, "frame_info", frame_sync, "frame_info")
-        tb.msg_connect(crc_verif, "msg", msg_sink, "in")
+        tb.msg_connect(crc_verif, "msg", msg_sink._block, "in")
 
         self._tb       = tb
         self._msg_sink = msg_sink
