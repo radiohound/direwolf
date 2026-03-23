@@ -82,6 +82,8 @@ sudo modprobe -r dvb_usb_rtl28xxu
 
 # Python packages
 pip3 install pyyaml
+# On Raspberry Pi OS Bookworm (2023+), add --break-system-packages:
+# pip3 install --break-system-packages pyyaml
 ```
 
 Verify the RTL-SDR is detected:
@@ -128,15 +130,14 @@ MYCALL  N0CALL-10
 # iGate (optional)
 IGSERVER noam.aprs2.net
 IGLOGIN  N0CALL-10 <passcode>
-IGCHAN 2
 
-# Position beacon (SDR path cannot transmit — remove PBEACON or leave it
-# and Dire Wolf will attempt TX, which the bridge will log and drop)
+# Position beacon — sendto=IG sends directly to APRS-IS (no RF transmit needed)
+PBEACON delay=1 every=30 sendto=IG overlay=L symbol="igate" lat=0^0.00N long=0^0.00W comment="LoRa APRS SDR iGate"
 ```
 
-> **Tip:** With the SDR bridge, remove or comment out `PBEACON` lines.
-> Dire Wolf will send TX frames to the bridge, which logs them as dropped.
-> They will not be transmitted.
+> **Note:** The SDR path cannot transmit.  Use `sendto=IG` on PBEACON so the
+> beacon goes directly to APRS-IS rather than over RF.  Any TX frames Dire Wolf
+> sends to the bridge (digipeater output, etc.) will be logged and dropped.
 
 ## Starting the bridge
 
@@ -158,13 +159,15 @@ python3 /usr/local/bin/lora_sdr_bridge.py -c /home/pi/lora.conf
 
 ## systemd service
 
-A service file is provided in `systemd/`:
+Service files are provided in `systemd/`.  The SDR bridge depends on Dire Wolf,
+so enable both:
 
 ```bash
+sudo cp systemd/direwolf.service /etc/systemd/system/
 sudo cp systemd/lora-sdr-bridge.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable lora-sdr-bridge
-sudo systemctl start lora-sdr-bridge
+sudo systemctl enable direwolf lora-sdr-bridge
+sudo systemctl start direwolf lora-sdr-bridge
 ```
 
 > Run either `lora-kiss-bridge.service` (hardware) **or**
@@ -239,7 +242,7 @@ Expected output:
 - Check permissions: `sudo usermod -a -G plugdev $USER` then log out/in
 
 **No packets received (but hardware seems OK)**
-- Verify frequency: 433.775 MHz for Region 1/3, 915.000 MHz for Region 2
+- Verify frequency: 433.775 MHz (global LoRa APRS standard)
 - Try higher gain: set `SDRGAIN 50` in lora.conf
 - Check spreading factor: SF12 is standard; some networks use SF9 or SF11
 - Run `rtl_power -f 433.7M:433.9M:1k -g 40 30s /tmp/scan.csv` to confirm RF activity
@@ -247,6 +250,15 @@ Expected output:
 **High CPU usage**
 - Expected ~20–35% on Pi 3; ~8–15% on Pi 5
 - Reducing `SDRSAMPLERATE` to `500000` can help if BW125 still decodes
+
+**Garbled decodes and failed parses**
+- Digipeated LoRa packets (those re-transmitted by another LoRa station)
+  are currently not decoded correctly by gr-lora_sdr.  Dire Wolf will log
+  `LoRa bridge: failed to parse` for these and discard them.
+- The original direct transmission from the source station decodes and
+  iGates normally.
+- This is a known limitation of the SDR path.  The hardware bridge
+  (SX1276/SX1262) does not have this issue.
 
 ## gr-lora_sdr vs gr-lora
 

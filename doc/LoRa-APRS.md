@@ -29,10 +29,24 @@ Dire Wolf  ←  direwolf.conf (callsign, iGate, digipeater, beacons)
 - Raspberry Pi (any model with SPI)
 - Supported LoRa module (see Hardware Profiles below)
 
+> **SPI must be enabled** before the bridge can communicate with the LoRa module:
+> ```bash
+> sudo raspi-config nonint do_spi 0
+> sudo reboot
+> ```
+> Verify with: `ls /dev/spidev*` — you should see `/dev/spidev0.0` and `/dev/spidev0.1`.
+
 **Software:**
-```
+```bash
 pip3 install LoRaRF pyyaml
 ```
+
+> **Note for Raspberry Pi OS Bookworm (2023+):** pip3 will refuse to install
+> system-wide packages by default.  Add `--break-system-packages` or use a
+> virtual environment:
+> ```bash
+> pip3 install --break-system-packages LoRaRF pyyaml
+> ```
 
 ## Files
 
@@ -88,15 +102,14 @@ MYCALL  N0CALL-10
 IGSERVER noam.aprs2.net
 IGLOGIN  N0CALL-10 <passcode>
 
-# Gate LoRa packets to APRS-IS (replace 2 with your LoRa channel number)
-IGCHAN 2
-
-# Position beacon over LoRa (replace 2 with your LoRa channel number)
-PBEACON delay=1 every=30 overlay=L symbol="a" lat=37^0.36N long=121^34.08W comment="LoRa APRS iGate 433.775 MHz SF12"
+# Position beacon — sendto=IG sends directly to APRS-IS (no RF transmit needed)
+PBEACON delay=1 every=30 sendto=IG overlay=L symbol="igate" lat=37^0.36N long=121^34.08W comment="LoRa APRS iGate 433.775 MHz SF12"
 ```
 
-> **Note:** The LoRa channel number is printed at startup:
-> `LoRa APRS bridge: channel 2, listening on port 8002`
+> **Note:** The LoRa channel number is printed at Dire Wolf startup:
+> `LoRa APRS bridge: channel 6, listening on port 8002`
+> Dire Wolf iGates received packets from all channels automatically when
+> `IGSERVER` is configured — no additional channel directive is needed.
 
 ### 3. Digipeating LoRa packets (optional)
 
@@ -145,8 +158,8 @@ python3 /usr/local/bin/lora_kiss_bridge.py --log-level DEBUG
 
 Two service files are provided in `systemd/`:
 
-**`lora-kiss-bridge.service`** — starts the bridge
-**`direwolf.service`** — starts Dire Wolf (depends on bridge)
+**`direwolf.service`** — starts Dire Wolf
+**`lora-kiss-bridge.service`** — starts the bridge (depends on Dire Wolf)
 
 Install:
 ```bash
@@ -162,8 +175,8 @@ sudo systemctl start lora-kiss-bridge direwolf
 | Region | Frequency | Notes |
 |--------|-----------|-------|
 | Region 1 (Europe, Africa, Middle East) | 433.775 MHz | Standard |
+| Region 2 (Americas) | 433.775 MHz | Standard |
 | Region 3 (Asia-Pacific) | 433.775 MHz | Standard |
-| Region 2 (Americas) | 915.000 MHz | Experimental — check local rules |
 
 Standard parameters: SF12, BW125, CR4/5, sync word 0x12.
 
@@ -175,7 +188,7 @@ Standard parameters: SF12, BW125, CR4/5, sync word 0x12.
 - Check GPIO permissions: `ls -l /dev/gpiomem`
 
 **Dire Wolf shows "LoRa bridge: waiting for connection":**
-- Make sure the bridge is running before Dire Wolf
+- Make sure Dire Wolf is running before the bridge
 - Check `KISSPORT` in `lora.conf` matches `LORAPORT` in `direwolf.conf`
 
 **No packets received:**
