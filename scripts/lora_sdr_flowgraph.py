@@ -257,31 +257,53 @@ class _LoRaMessageSink:
 
                 def _handle_msg(self_, msg):
                     try:
-                        # Root cause: the PDU metadata dict contains a PMT
-                        # symbol whose value is binary (0xff bytes).
-                        # pmt.symbol_to_string() decodes it as UTF-8 →
-                        # UnicodeDecodeError (a ValueError subclass), which
-                        # pmt_to_python silently catches → fallthrough error.
-                        # Fix: never call pmt.car() or pmt.to_python() on the
-                        # full message.  Extract only the cdr (u8vector
-                        # payload).  pmt.cdr() may auto-convert to numpy in
-                        # GR 3.10; handle both cases.
-                        payload_raw = pmt.cdr(msg)
-
-                        # If bindings returned a numpy array, use tobytes();
-                        # otherwise call u8vector_elements() on the pmt.
-                        if hasattr(payload_raw, 'tobytes'):
-                            payload = payload_raw.tobytes()
-                        else:
-                            try:
-                                payload = bytes(
-                                    pmt.u8vector_elements(payload_raw))
-                            except Exception:
-                                payload = bytes(bytearray(payload_raw))
-
+                        # All pmt functions that take pmt_t as input fail
+                        # with UnicodeDecodeError: the SWIG input typemap
+                        # tries to convert msg via a string path and hits
+                        # a 0xff byte at position 21 in the binary payload.
+                        # pmt.serialize_str() converts pmt → bytes (the
+                        # C++ std::string SWIG binding returns Python bytes
+                        # in GR 3.10, avoiding the UTF-8 decode path).
+                        # We then scan the raw PMT binary for the uniform-
+                        # vector tag (0x0c) and pull out the u8 payload.
+                        raw = pmt.serialize_str(msg)
+                        if isinstance(raw, str):
+                            # Older SWIG: returned str, not bytes.
+                            raw = raw.encode('latin-1')
+                        payload = self_._extract_u8vector(raw)
+                        if payload is None:
+                            log.warning(
+                                "Could not find u8vector in PDU "
+                                "(raw len=%d, type=%s)",
+                                len(raw), type(msg).__name__)
+                            return
                         self_._cb(payload, snr=None)
                     except Exception:
                         log.exception("Error handling LoRa PDU message")
+
+                @staticmethod
+                def _extract_u8vector(raw):
+                    """
+                    Scan serialized PMT bytes for a uniform-vector (0x0c)
+                    with subtype 0 (u8) and return the payload bytes.
+                    Tries both uint32 and uint64 length encodings.
+                    """
+                    UV = 0x0c   # SERIALIZE_UNIFORM_VECTOR tag
+                    for i in range(len(raw) - 2):
+                        if raw[i] == UV and raw[i + 1] == 0:  # 0 = PST_u8
+                            # uint32 length (4 bytes)
+                            if i + 6 <= len(raw):
+                                n = int.from_bytes(raw[i+2:i+6], 'big')
+                                end = i + 6 + n
+                                if 0 < n <= 300 and end <= len(raw):
+                                    return bytes(raw[i+6:end])
+                            # uint64 length (8 bytes)
+                            if i + 10 <= len(raw):
+                                n = int.from_bytes(raw[i+2:i+10], 'big')
+                                end = i + 10 + n
+                                if 0 < n <= 300 and end <= len(raw):
+                                    return bytes(raw[i+10:end])
+                    return None
 
             self._block = _Sink(callback)
 
