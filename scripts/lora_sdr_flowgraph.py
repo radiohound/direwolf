@@ -94,7 +94,7 @@ class LoRaSdrFlowgraph:
 
     def _build(self):
         """Construct the GNU Radio top_block."""
-        from gnuradio import gr, lora_sdr
+        from gnuradio import gr, blocks, lora_sdr
         import osmosdr
 
         bw_hz       = self._bw * 1000
@@ -133,9 +133,14 @@ class LoRaSdrFlowgraph:
         src.set_if_gain(20)
         src.set_bb_gain(20)
         src.set_bandwidth(bw_hz * 2)
+
         # frame_sync needs 2^sf * (samp_rate/bw) samples per call.
-        # Set the source's minimum output buffer large enough to satisfy it.
-        src.set_min_output_buffer(int(2**self._sf * actual_rate / bw_hz * 1.5))
+        # osmosdr ignores set_min_output_buffer, so insert a copy block and
+        # set the buffer there — matching the pattern in the gr-lora_sdr
+        # simulation example.
+        buf_size = int(2**self._sf * actual_rate / bw_hz * 1.5)
+        buf = blocks.copy(gr.sizeof_gr_complex)
+        buf.set_min_output_buffer(buf_size)
 
         # --- gr-lora_sdr receiver ---
         # lora_sdr_lora_rx is a hier_block2 that handles all LoRa demodulation
@@ -163,8 +168,8 @@ class LoRaSdrFlowgraph:
         # --- Message sink: delivers decoded frames to Python ---
         msg_sink = _LoRaMessageSink(callback=self._on_packet)
 
-        # Connect: src -> lora_rx; decoded frames arrive on message port "out"
-        tb.connect(src, lora_rx)
+        # Connect: src -> buf -> lora_rx; decoded frames on message port "out"
+        tb.connect(src, buf, lora_rx)
         tb.msg_connect(lora_rx, "out", msg_sink, "in")
 
         self._tb       = tb
