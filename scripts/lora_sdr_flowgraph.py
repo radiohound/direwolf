@@ -140,11 +140,14 @@ class LoRaSdrFlowgraph:
         # does not reach frame_sync.  Instantiate the individual demodulator
         # blocks directly so our buffer feeds frame_sync with no indirection.
         os_factor = int(actual_rate / bw_hz)
-        buf_size  = int(2**self._sf * os_factor * 1.5)
+        # frame_sync needs 2^sf * os_factor items per work() call.
+        # set_min_output_buffer takes BYTES not items — multiply by item size.
+        buf_items = int(2**self._sf * os_factor * 1.5)
+        buf_bytes = buf_items * gr.sizeof_gr_complex
 
         # Buffer block: its output IS the input buffer of frame_sync.
         buf = blocks.copy(gr.sizeof_gr_complex)
-        buf.set_min_output_buffer(buf_size)
+        buf.set_min_output_buffer(buf_bytes)
 
         # --- gr-lora_sdr demodulator chain (individual blocks) ---
         # LoRa APRS does not use the LoRa MAC CRC — the payload already carries
