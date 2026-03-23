@@ -257,24 +257,31 @@ class _LoRaMessageSink:
 
                 def _handle_msg(self_, msg):
                     try:
-                        meta_pmt    = pmt.car(msg)
-                        payload_pmt = pmt.cdr(msg)
-                        payload = bytes(
-                            pmt.u8vector_elements(payload_pmt)
-                        )
+                        # GR 3.10 pybind11: pmt.car()/cdr() trigger a
+                        # UTF-8 decode of the entire cons pair (including
+                        # binary payload bytes) and raise UnicodeDecodeError.
+                        # pmt.to_python() converts to native Python objects
+                        # without UTF-8 interpretation.
+                        py_msg = pmt.to_python(msg)
 
-                        # Extract SNR from PDU metadata if available.
-                        # gr-lora_sdr stores it as a real-valued PMT under
-                        # the key "snr" in the metadata dict.
+                        # PDU = (meta_dict, payload_bytes_or_tuple)
+                        if not (isinstance(py_msg, (tuple, list))
+                                and len(py_msg) == 2):
+                            log.warning("Unexpected PDU format: %s",
+                                        type(py_msg))
+                            return
+
+                        meta, payload_data = py_msg
+                        payload = (payload_data if isinstance(payload_data, bytes)
+                                   else bytes(payload_data))
+
+                        # Extract SNR from metadata dict if present.
                         snr = None
-                        snr_key = pmt.intern("snr")
-                        if (pmt.is_dict(meta_pmt) and
-                                pmt.dict_has_key(meta_pmt, snr_key)):
-                            snr_pmt = pmt.dict_ref(
-                                meta_pmt, snr_key, pmt.PMT_NIL
-                            )
-                            if pmt.is_real(snr_pmt):
-                                snr = pmt.to_double(snr_pmt)
+                        if isinstance(meta, dict) and "snr" in meta:
+                            try:
+                                snr = float(meta["snr"])
+                            except (TypeError, ValueError):
+                                pass
 
                         self_._cb(payload, snr=snr)
                     except Exception:
