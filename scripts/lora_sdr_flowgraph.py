@@ -94,13 +94,12 @@ class LoRaSdrFlowgraph:
 
     def _build(self):
         """Construct the GNU Radio top_block."""
-        from gnuradio import gr, blocks, filter as grfilter
-        from gnuradio import lora_sdr
+        from gnuradio import gr, lora_sdr
         import osmosdr
 
         bw_hz       = self._bw * 1000
-        # gr-lora_sdr needs sample rate = integer multiple of bandwidth
-        # Use the next power-of-two multiple >= requested sample_rate
+        # lora_sdr_lora_rx uses int(samp_rate/bw) as oversampling factor
+        # internally, so samp_rate must be an integer multiple of bw.
         decimation  = max(1, self._samp_rate // bw_hz)
         actual_rate = bw_hz * decimation
 
@@ -135,37 +134,35 @@ class LoRaSdrFlowgraph:
         src.set_bb_gain(20)
         src.set_bandwidth(bw_hz * 2)
 
-        # --- Low-pass anti-alias filter ---
-        lpf_taps = grfilter.firdes.low_pass(
-            gain=1.0,
-            sampling_freq=actual_rate,
-            cutoff_freq=bw_hz,
-            transition_width=bw_hz * 0.2,
-            window=grfilter.window.WIN_HAMMING,
-        )
-        lpf = grfilter.fir_filter_ccf(decimation, lpf_taps)
-
         # --- gr-lora_sdr receiver ---
+        # lora_sdr_lora_rx is a hier_block2 that handles all LoRa demodulation
+        # internally (frame sync, FFT demod, FEC, dewhitening, CRC verify).
+        # It expects IQ samples at actual_rate and decimates internally.
+        #
         # LoRa APRS does not use the LoRa MAC CRC — the payload already carries
         # an AX.25 FCS.  has_crc must be False; setting it True causes gr-lora_sdr
         # to reject every valid LoRa APRS packet as a CRC failure.
-        lora_rx = lora_sdr.lora_receiver(
-            bw_hz,                    # bandwidth Hz
-            [self._sw],               # sync words list
-            [self._sf],               # spreading factors list
-            actual_rate / decimation, # input sample rate to lora block
-            self._cr - 4,             # cr offset: 1=4/5, 2=4/6, 3=4/7, 4=4/8
-            False,                    # has_crc — LoRa APRS never uses LoRa CRC
-            1,                        # multi_control
-            False,                    # lowDataRate
+        lora_rx = lora_sdr.lora_sdr_lora_rx(
+            center_freq   = self._freq_hz,
+            bw            = bw_hz,
+            cr            = self._cr - 4,  # 1=4/5, 2=4/6, 3=4/7, 4=4/8
+            has_crc       = False,         # LoRa APRS: AX.25 FCS, not LoRa CRC
+            impl_head     = False,         # explicit header
+            pay_len       = 255,           # max payload length
+            samp_rate     = actual_rate,
+            sf            = self._sf,
+            sync_word     = [self._sw],
+            soft_decoding = False,
+            ldro_mode     = 2,             # auto-detect LDRO
+            print_rx      = [False, False],# suppress stdout; we handle logging
         )
 
         # --- Message sink: delivers decoded frames to Python ---
         msg_sink = _LoRaMessageSink(callback=self._on_packet)
 
-        # Connect: src -> lpf -> lora_rx (message port) -> sink
-        tb.connect(src, lpf, lora_rx)
-        tb.msg_connect(lora_rx, "frames", msg_sink, "in")
+        # Connect: src -> lora_rx; decoded frames arrive on message port "out"
+        tb.connect(src, lora_rx)
+        tb.msg_connect(lora_rx, "out", msg_sink, "in")
 
         self._tb       = tb
         self._msg_sink = msg_sink
@@ -218,7 +215,7 @@ class _LoRaMessageSink:
     LoRa frames from gr-lora_sdr via its message port and calls a Python
     callback with the payload bytes.
 
-    gr-lora_sdr emits PDU messages on its "frames" port.
+    gr-lora_sdr emits PDU messages on its "out" port (via crc_verif).
     Each PDU is a pair (metadata_dict, payload_vector).
     """
 
