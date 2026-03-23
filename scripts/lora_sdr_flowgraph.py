@@ -284,25 +284,30 @@ class _LoRaMessageSink:
                 @staticmethod
                 def _extract_u8vector(raw):
                     """
-                    Scan serialized PMT bytes for a uniform-vector (0x0c)
-                    with subtype 0 (u8) and return the payload bytes.
-                    Tries both uint32 and uint64 length encodings.
+                    Extract the payload bytes from a serialized PMT.
+                    Observed format: [1-byte type][uint16-BE length][data]
+                    (3-byte header, matches raw_len - payload_len = 3).
+                    Falls back to scanning for the u8vector tag (0x0c).
                     """
-                    UV = 0x0c   # SERIALIZE_UNIFORM_VECTOR tag
-                    for i in range(len(raw) - 2):
-                        if raw[i] == UV and raw[i + 1] == 0:  # 0 = PST_u8
-                            # uint32 length (4 bytes)
-                            if i + 6 <= len(raw):
-                                n = int.from_bytes(raw[i+2:i+6], 'big')
-                                end = i + 6 + n
-                                if 0 < n <= 300 and end <= len(raw):
-                                    return bytes(raw[i+6:end])
-                            # uint64 length (8 bytes)
-                            if i + 10 <= len(raw):
-                                n = int.from_bytes(raw[i+2:i+10], 'big')
-                                end = i + 10 + n
-                                if 0 < n <= 300 and end <= len(raw):
-                                    return bytes(raw[i+10:end])
+                    total = len(raw)
+
+                    # Primary: 3-byte header [type][len_hi][len_lo][data]
+                    if total >= 3:
+                        n = int.from_bytes(raw[1:3], 'big')
+                        if n == total - 3 and n > 0:
+                            return bytes(raw[3:])
+
+                    # Fallback: scan for SERIALIZE_UNIFORM_VECTOR (0x0c)
+                    # subtype 0x00 (u8), then uint32 or uint64 length
+                    for i in range(total - 2):
+                        if raw[i] == 0x0c and raw[i + 1] == 0x00:
+                            for hdr in (6, 10):
+                                if i + hdr <= total:
+                                    n = int.from_bytes(
+                                        raw[i+2:i+hdr], 'big')
+                                    end = i + hdr + n
+                                    if 0 < n <= 300 and end <= total:
+                                        return bytes(raw[i+hdr:end])
                     return None
 
             self._block = _Sink(callback)
