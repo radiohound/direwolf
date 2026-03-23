@@ -133,6 +133,9 @@ class LoRaSdrFlowgraph:
         src.set_if_gain(20)
         src.set_bb_gain(20)
         src.set_bandwidth(bw_hz * 2)
+        # frame_sync needs 2^sf * (samp_rate/bw) samples per call.
+        # Set the source's minimum output buffer large enough to satisfy it.
+        src.set_min_output_buffer(int(2**self._sf * actual_rate / bw_hz * 1.5))
 
         # --- gr-lora_sdr receiver ---
         # lora_sdr_lora_rx is a hier_block2 that handles all LoRa demodulation
