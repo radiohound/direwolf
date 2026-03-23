@@ -5046,6 +5046,24 @@ void config_init (char *fname, struct audio_s *p_audio_config,
 	      else {
 	        p_misc_config->lora_port = n;
 	        dw_printf ("LoRa APRS bridge port: %d\n", p_misc_config->lora_port);
+
+	        /*
+	         * Pre-assign the LoRa channel so that PBEACON sendto=<chan> validation
+	         * works correctly.  loratnc_init() uses the same logic to find the channel:
+	         * the first slot above MAX_RADIO_CHANS that is MEDIUM_NONE.
+	         * By marking it MEDIUM_NETTNC here, beacon_options() will accept it as a
+	         * valid transmit destination for PBEACON sendto=<chan>.
+	         */
+	        int lora_chan = MAX_RADIO_CHANS;
+	        while (lora_chan < MAX_TOTAL_CHANS && p_audio_config->chan_medium[lora_chan] != MEDIUM_NONE) {
+	          lora_chan++;
+	        }
+	        if (lora_chan < MAX_TOTAL_CHANS) {
+	          p_audio_config->chan_medium[lora_chan] = MEDIUM_NETTNC;
+	          /* Copy mycall from channel 0 so PBEACON MYCALL validation passes. */
+	          strlcpy (p_audio_config->mycall[lora_chan], p_audio_config->mycall[0],
+	                   sizeof(p_audio_config->mycall[lora_chan]));
+	        }
 	      }
 	    }
 	  }
