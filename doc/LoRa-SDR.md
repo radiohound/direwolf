@@ -170,8 +170,13 @@ sudo systemctl enable direwolf lora-sdr-bridge
 sudo systemctl start direwolf lora-sdr-bridge
 ```
 
-> Run either `lora-kiss-bridge.service` (hardware) **or**
-> `lora-sdr-bridge.service` (SDR) — not both at once.
+> **Run only one bridge at a time.**  Dire Wolf's `LORAPORT` accepts only
+> one TCP connection at a time.  If both bridges connect simultaneously,
+> whichever connects second takes the slot — TX packets intended for the
+> hardware bridge will be silently dropped by the SDR bridge (which is
+> RX-only), and no RF transmission will occur.  Use either
+> `lora-kiss-bridge.service` (hardware, RX+TX) **or**
+> `lora-sdr-bridge.service` (SDR, RX-only) — never both.
 
 ## Switching between hardware and SDR bridge
 
