@@ -5048,19 +5048,17 @@ void config_init (char *fname, struct audio_s *p_audio_config,
 	        dw_printf ("LoRa APRS bridge port: %d\n", p_misc_config->lora_port);
 
 	        /*
-	         * Pre-assign the LoRa channel so that PBEACON sendto=<chan> validation
-	         * works correctly.  loratnc_init() uses the same logic to find the channel:
-	         * the first slot above MAX_RADIO_CHANS that is MEDIUM_NONE.
-	         * By marking it MEDIUM_NETTNC here, beacon_options() will accept it as a
-	         * valid transmit destination for PBEACON sendto=<chan>.
+	         * Pre-populate mycall for the LoRa channel so PBEACON sendto=<chan>
+	         * MYCALL validation passes.  loratnc_init() assigns the same channel:
+	         * the first MEDIUM_NONE slot above MAX_RADIO_CHANS.
+	         * We do NOT set chan_medium here — that would cause Dire Wolf to try
+	         * to initialize the channel as a regular network TNC.
 	         */
 	        int lora_chan = MAX_RADIO_CHANS;
 	        while (lora_chan < MAX_TOTAL_CHANS && p_audio_config->chan_medium[lora_chan] != MEDIUM_NONE) {
 	          lora_chan++;
 	        }
 	        if (lora_chan < MAX_TOTAL_CHANS) {
-	          p_audio_config->chan_medium[lora_chan] = MEDIUM_NETTNC;
-	          /* Copy mycall from channel 0 so PBEACON MYCALL validation passes. */
 	          strlcpy (p_audio_config->mycall[lora_chan], p_audio_config->mycall[0],
 	                   sizeof(p_audio_config->mycall[lora_chan]));
 	        }
@@ -5999,7 +5997,8 @@ static int beacon_options(char *cmd, struct beacon_s *b, int line, struct audio_
 	    }
 	    else {
 	       int n = atoi(value);
-	       if (( n < 0 || n >= MAX_TOTAL_CHANS || p_audio_config->chan_medium[n] == MEDIUM_NONE)
+	       if (( n < 0 || n >= MAX_TOTAL_CHANS ||
+	             (p_audio_config->chan_medium[n] == MEDIUM_NONE && n < MAX_RADIO_CHANS))
 			&& p_audio_config->chan_medium[n] != MEDIUM_IGATE) {
 	         text_color_set(DW_COLOR_ERROR);
 	         dw_printf ("Config file, line %d: Send to channel %d is not valid.\n", line, n);
@@ -6250,7 +6249,8 @@ static int beacon_options(char *cmd, struct beacon_s *b, int line, struct audio_
 
 	if (b->sendto_type == SENDTO_XMIT) {
 
-	  if (( b->sendto_chan < 0 || b->sendto_chan >= MAX_TOTAL_CHANS || p_audio_config->chan_medium[b->sendto_chan] == MEDIUM_NONE)
+	  if (( b->sendto_chan < 0 || b->sendto_chan >= MAX_TOTAL_CHANS ||
+	        (p_audio_config->chan_medium[b->sendto_chan] == MEDIUM_NONE && b->sendto_chan < MAX_RADIO_CHANS))
 		&& p_audio_config->chan_medium[b->sendto_chan] != MEDIUM_IGATE) {
 	    text_color_set(DW_COLOR_ERROR);
 	    dw_printf ("Config file, line %d: Send to channel %d is not valid.\n", line, b->sendto_chan);
@@ -6268,12 +6268,16 @@ static int beacon_options(char *cmd, struct beacon_s *b, int line, struct audio_
 	      return (0);
 	    }
 	  } else {
-	    if ( strcmp(p_audio_config->mycall[b->sendto_chan], "") == 0 ||
-	         strcmp(p_audio_config->mycall[b->sendto_chan], "NOCALL") == 0 ||
-	         strcmp(p_audio_config->mycall[b->sendto_chan], "N0CALL") == 0 ) {
+	    /* For non-radio channels (>= MAX_RADIO_CHANS, e.g. LoRa bridge), mycall
+	     * is not set at config parse time — loratnc_init() assigns the channel
+	     * later.  Fall back to channel 0's callsign for validation. */
+	    int mycall_chan = (b->sendto_chan >= MAX_RADIO_CHANS) ? 0 : b->sendto_chan;
+	    if ( strcmp(p_audio_config->mycall[mycall_chan], "") == 0 ||
+	         strcmp(p_audio_config->mycall[mycall_chan], "NOCALL") == 0 ||
+	         strcmp(p_audio_config->mycall[mycall_chan], "N0CALL") == 0 ) {
 
 	      text_color_set(DW_COLOR_ERROR);
-	      dw_printf ("Config file: MYCALL must be set for channel %d before beaconing is allowed.\n", b->sendto_chan); 
+	      dw_printf ("Config file: MYCALL must be set for channel %d before beaconing is allowed.\n", mycall_chan);
 	      return (0);
 	    }
 	  }
