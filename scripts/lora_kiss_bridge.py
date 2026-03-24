@@ -469,7 +469,10 @@ class LoRaBridge:
         except Exception:
             return
         log.info("TX → LoRa: %s", tnc2)
-        self._radio.transmit(tnc2.encode('ascii', errors='replace'))
+        # LoRa APRS standard preamble: 0x3C 0xFF ('<' + 0xFF)
+        # Required by most LoRa APRS firmware (ESP32 iGates, trackers, etc.)
+        payload = b'<\xff' + tnc2.encode('ascii', errors='replace')
+        self._radio.transmit(payload)
 
     def _shutdown(self, *_):
         log.info("Shutting down")
