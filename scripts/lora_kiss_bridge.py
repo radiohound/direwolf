@@ -449,6 +449,7 @@ class LoRaBridge:
 
     def _on_rx_from_lora(self, payload_bytes, rssi, snr):
         """Received a packet from LoRa — forward TNC2 text to Dire Wolf."""
+        log.debug("RX raw bytes: %s", payload_bytes[:8].hex())
         try:
             tnc2 = payload_bytes.decode('ascii', errors='replace').strip()
         except Exception:
