@@ -168,7 +168,7 @@ profiles:
       busy:   null         # SX1276 has no BUSY pin
       tx_en:  null
       rx_en:  null
-    pa_boost: false          # RFO pin routed to antenna on this board
+    pa_boost: true           # PA_BOOST path — test to verify TX works
     tcxo:
       enabled: false
     max_tx_power_dbm: 17
