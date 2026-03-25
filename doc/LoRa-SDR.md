@@ -61,11 +61,15 @@ Only the bridge script and the SNR prefix in the wire format differ.
 
 **Software:**
 ```bash
-# GNU Radio (package manager — easier than building from source)
-sudo apt install gnuradio
+# GNU Radio + gr-osmosdr (package manager — easier than building from source)
+# gr-osmosdr provides the RTL-SDR source block used by the flowgraph.
+sudo apt install gnuradio gr-osmosdr
 
-# gr-lora_sdr (must build from source)
-sudo apt install cmake git libboost-all-dev libcppunit-dev swig doxygen
+# gr-lora_sdr (must build from source — not available as a Debian package)
+# Build dependencies for GNU Radio 3.10 with pybind11 (replaces the older
+# libcppunit-dev + swig approach used with GR 3.8 and earlier):
+sudo apt install cmake git libboost-all-dev pybind11-dev python3-pybind11
+
 git clone https://github.com/tapparelj/gr-lora_sdr.git
 cd gr-lora_sdr
 mkdir build && cd build
@@ -74,16 +78,21 @@ make -j$(nproc)
 sudo make install
 sudo ldconfig
 
+# Verify the Python bindings loaded correctly:
+python3 -c "from gnuradio import lora_sdr; print('lora_sdr OK')"
+
 # RTL-SDR driver
 sudo apt install rtl-sdr
-# Blacklist the kernel DVB driver so rtl-sdr can claim the device:
+
+# Blacklist the kernel DVB driver so rtl-sdr can claim the device.
+# Without this, the kernel grabs the dongle and rtl_test will show
+# "usb_claim_interface error -6":
 echo "blacklist dvb_usb_rtl28xxu" | sudo tee /etc/modprobe.d/rtlsdr.conf
-sudo modprobe -r dvb_usb_rtl28xxu
+sudo modprobe -r dvb_usb_rtl28xxu 2>/dev/null || true   # ignore error if not loaded
 
 # Python packages
-pip3 install pyyaml
-# On Raspberry Pi OS Bookworm (2023+), add --break-system-packages:
-# pip3 install --break-system-packages pyyaml
+# On Raspberry Pi OS Bookworm / Debian Trixie (2023+) add --break-system-packages:
+pip3 install --break-system-packages pyyaml
 ```
 
 Verify the RTL-SDR is detected:
@@ -119,9 +128,14 @@ KISSPORT  8002
 
 ### direwolf.conf
 
-No changes needed from the hardware bridge setup:
+No changes needed beyond the hardware bridge setup, with one addition: if
+you have no physical audio TNC (common on a LoRa/SDR-only setup), add
+`ADEVICE null null` so Dire Wolf does not exit when it finds no sound card:
 
 ```
+# Suppress audio device requirement (LoRa/SDR-only setup)
+ADEVICE null null
+
 # Accept LoRa bridge connection on this port
 LORAPORT 8002
 
@@ -132,12 +146,21 @@ IGSERVER noam.aprs2.net
 IGLOGIN  N0CALL-10 <passcode>
 
 # Position beacon — sendto=IG sends directly to APRS-IS (no RF transmit needed)
-PBEACON delay=1 every=30 sendto=IG overlay=L symbol="igate" lat=0^0.00N long=0^0.00W comment="LoRa APRS SDR iGate"
+PBEACON delay=1 every=30 sendto=IG overlay=L symbol="igate" lat=0.0000 long=0.0000 comment="LoRa APRS SDR iGate"
 ```
 
 > **Note:** The SDR path cannot transmit.  Use `sendto=IG` on PBEACON so the
 > beacon goes directly to APRS-IS rather than over RF.  Any TX frames Dire Wolf
 > sends to the bridge (digipeater output, etc.) will be logged and dropped.
+
+If you also want to receive **VHF APRS** (144.390 MHz) alongside LoRa,
+pipe `rtl_fm` into Dire Wolf instead of using `ADEVICE null null`:
+
+```bash
+rtl_fm -f 144.390M -o 4 -s 24000 - | direwolf -c ~/direwolf.conf -r 24000 -D 1 -
+```
+
+This uses channel 0 for 1200-baud APRS and channel 6 for LoRa simultaneously.
 
 ## Starting the bridge
 
@@ -147,14 +170,15 @@ Start Dire Wolf **before** the bridge (Dire Wolf is the TCP server):
 # Terminal 1
 direwolf -c ~/direwolf.conf
 
-# Terminal 2
-python3 /usr/local/bin/lora_sdr_bridge.py
+# Terminal 2 — run from the source tree, or copy to /usr/local/bin first:
+#   sudo cp ~/direwolf/scripts/lora_sdr_bridge.py /usr/local/bin/
+python3 ~/direwolf/scripts/lora_sdr_bridge.py
 
 # With debug logging
-python3 /usr/local/bin/lora_sdr_bridge.py --log-level DEBUG
+python3 ~/direwolf/scripts/lora_sdr_bridge.py --log-level DEBUG
 
 # With explicit config path
-python3 /usr/local/bin/lora_sdr_bridge.py -c /home/pi/lora.conf
+python3 ~/direwolf/scripts/lora_sdr_bridge.py -c ~/lora.conf
 ```
 
 ## systemd service

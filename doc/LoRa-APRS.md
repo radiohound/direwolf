@@ -41,9 +41,9 @@ Dire Wolf  ←  direwolf.conf (callsign, iGate, digipeater, beacons)
 pip3 install LoRaRF pyyaml
 ```
 
-> **Note for Raspberry Pi OS Bookworm (2023+):** pip3 will refuse to install
-> system-wide packages by default.  Add `--break-system-packages` or use a
-> virtual environment:
+> **Note for Raspberry Pi OS Bookworm / Debian Trixie (2023+):** pip3 will
+> refuse to install system-wide packages by default.  Add
+> `--break-system-packages` or use a virtual environment:
 > ```bash
 > pip3 install --break-system-packages LoRaRF pyyaml
 > ```
@@ -54,17 +54,25 @@ pip3 install LoRaRF pyyaml
 |------|----------------|---------|
 | `lora.conf` | `~/lora.conf` | LoRa RF parameters and hardware profile |
 | `direwolf.conf` | `~/direwolf.conf` | Dire Wolf station configuration |
-| `lora_kiss_bridge.py` | `/usr/local/bin/` | LoRa hardware driver script |
-| `hardware_profiles.yaml` | next to `lora_kiss_bridge.py` | Hardware pin definitions |
+| `lora_kiss_bridge.py` | `~/direwolf/scripts/` | LoRa hardware driver script |
+| `hardware_profiles.yaml` | `~/direwolf/scripts/` | Hardware pin definitions |
+
+> **Note:** `lora_kiss_bridge.py` and `hardware_profiles.yaml` are not
+> installed to `/usr/local/bin` by `make install`.  Run them directly from
+> the source tree, or copy them manually:
+> ```bash
+> sudo cp ~/direwolf/scripts/lora_kiss_bridge.py /usr/local/bin/
+> sudo cp ~/direwolf/scripts/hardware_profiles.yaml /usr/local/bin/
+> ```
 
 ## Configuration
 
 ### 1. lora.conf
 
-Copy `conf/lora.conf` to your home directory and edit it:
+Copy the template from the source tree to your home directory and edit it:
 
-```
-~/lora.conf
+```bash
+cp ~/direwolf/conf/lora.conf ~/lora.conf
 ```
 
 Key settings:
@@ -88,22 +96,42 @@ KISSPORT   8002
 
 ### 2. direwolf.conf
 
-Add these lines to your existing `direwolf.conf`:
+If you haven't already, copy the template to your home directory:
+
+```bash
+cp /usr/local/share/doc/direwolf/conf/direwolf.conf ~/direwolf.conf
+```
+
+Edit `~/direwolf.conf` and make the following changes:
+
+**1. Set your callsign** — find the `MYCALL` line and replace `N0CALL` with
+your callsign and SSID:
+```
+MYCALL  W1ABC-10
+```
+
+**2. Set your APRS passcode** — uncomment `IGSERVER` and `IGLOGIN` and fill
+in your callsign and passcode (generate one at https://apps.magicbug.co.uk/passcode
+if you don't have it):
+```
+IGSERVER noam.aprs2.net
+IGLOGIN  W1ABC-10 12345
+```
+
+**3. Add the following lines** for LoRa support:
 
 ```
+# If you have no audio TNC (LoRa-only or RTL-SDR piped setup), tell
+# Dire Wolf not to open a physical audio device:
+ADEVICE null null
+
 # LoRa APRS bridge connection
 # The bridge connects to Dire Wolf on this port.
 LORAPORT 8002
 
-# Assign your callsign to the LoRa channel (channel number shown at startup)
-MYCALL  N0CALL-10
-
-# iGate configuration (optional)
-IGSERVER noam.aprs2.net
-IGLOGIN  N0CALL-10 <passcode>
-
 # Position beacon — sendto=IG sends directly to APRS-IS (no RF transmit needed)
-PBEACON delay=1 every=30 sendto=IG overlay=L symbol="igate" lat=37^0.36N long=121^34.08W comment="LoRa APRS iGate 433.775 MHz SF12"
+# Replace lat/long with your actual location in decimal degrees.
+PBEACON delay=1 every=30 sendto=IG overlay=L symbol="igate" lat=0.0000 long=0.0000 comment="LoRa APRS iGate 433.775 MHz SF12"
 ```
 
 > **Note:** The LoRa channel number is printed at Dire Wolf startup:
