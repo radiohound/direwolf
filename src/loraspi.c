@@ -681,9 +681,15 @@ static bool sx1262_init (lora_chan_t *lc) {
     uint8_t pkt_rx[7];
     sx1262_cmd(lc, pkt, pkt_rx, 7);
 
-    /* Sync word: write high byte to 0x0740, low byte to 0x0741 */
-    sx1262_write_reg(lc, 0x0740, (uint8_t)((lc->sw >> 8) & 0xFF));
-    sx1262_write_reg(lc, 0x0741, (uint8_t)( lc->sw       & 0xFF));
+    /* Sync word: SX1262 uses 2 bytes at 0x0740/0x0741.
+     * The SX1276-style single byte (e.g. 0x12) maps to SX1262 format by
+     * expanding each nibble: 0x12 -> 0x1424, 0x34 -> 0x3444.
+     * Formula: high = (sw >> 4 & 0x0F) << 4 | 0x04
+     *          low  = (sw      & 0x0F) << 4 | 0x04  */
+    uint8_t sw_hi = (uint8_t)(((lc->sw >> 4) & 0x0F) << 4 | 0x04);
+    uint8_t sw_lo = (uint8_t)(( lc->sw       & 0x0F) << 4 | 0x04);
+    sx1262_write_reg(lc, 0x0740, sw_hi);
+    sx1262_write_reg(lc, 0x0741, sw_lo);
 
     /* Buffer base addresses: TX=0x00, RX=0x00 */
     uint8_t buf_base[3] = { SX1262_CMD_SET_BUFFER_BASE_ADDR, 0x00, 0x00 };
