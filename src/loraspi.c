@@ -44,6 +44,7 @@
 #include <pthread.h>
 #include <sys/ioctl.h>
 #include <linux/spi/spidev.h>
+#include <dirent.h>
 
 #include <math.h>
 #include "textcolor.h"
@@ -190,41 +191,92 @@ static const hw_profile_t *find_profile (const char *name) {
 
 /* =========================================================================
  * GPIO via sysfs  (/sys/class/gpio/)
+ *
+ * On Raspberry Pi 3/4 the GPIO chip is registered at sysfs base 0, so
+ * BCM pin N appears as /sys/class/gpio/gpioN.
+ * On Raspberry Pi 5 the RP1 chip registers at a non-zero base (typically
+ * 512), so BCM pin N appears as /sys/class/gpio/gpio(512+N).
+ * gpio_sysfs_num() maps a BCM pin number to the correct sysfs number.
  * ========================================================================= */
-static void gpio_export (int pin) {
+static int s_gpio_base = -1;   /* -1 = not yet detected */
+
+static int gpio_sysfs_num (int bcm_pin) {
+    if (s_gpio_base < 0) {
+        /* Scan /sys/class/gpio/ for gpiochipN; pick the chip with the
+         * smallest base that has ngpio >= 28 (covers the Pi header GPIO). */
+        int best = 0;
+        bool found = false;
+        DIR *d = opendir("/sys/class/gpio");
+        if (d) {
+            struct dirent *de;
+            while ((de = readdir(d)) != NULL) {
+                if (strncmp(de->d_name, "gpiochip", 8) != 0) continue;
+                char p[128];
+                snprintf(p, sizeof(p), "/sys/class/gpio/%s/base", de->d_name);
+                int fd = open(p, O_RDONLY);
+                if (fd < 0) continue;
+                char buf[16]; int n = read(fd, buf, sizeof(buf)-1); close(fd);
+                if (n <= 0) continue;
+                buf[n] = '\0';
+                int base = atoi(buf);
+                snprintf(p, sizeof(p), "/sys/class/gpio/%s/ngpio", de->d_name);
+                fd = open(p, O_RDONLY);
+                if (fd < 0) continue;
+                n = read(fd, buf, sizeof(buf)-1); close(fd);
+                if (n <= 0) continue;
+                buf[n] = '\0';
+                int ngpio = atoi(buf);
+                if (ngpio >= 28 && (!found || base < best)) {
+                    best = base; found = true;
+                }
+            }
+            closedir(d);
+        }
+        s_gpio_base = found ? best : 0;
+        text_color_set(DW_COLOR_INFO);
+        dw_printf ("loraspi: GPIO chip base offset = %d\n", s_gpio_base);
+    }
+    return s_gpio_base + bcm_pin;
+}
+
+static void gpio_export (int bcm_pin) {
+    int sysfs_pin = gpio_sysfs_num(bcm_pin);
     char path[64];
-    snprintf(path, sizeof(path), "/sys/class/gpio/gpio%d", pin);
+    snprintf(path, sizeof(path), "/sys/class/gpio/gpio%d", sysfs_pin);
     if (access(path, F_OK) == 0) return;   /* already exported */
     int fd = open("/sys/class/gpio/export", O_WRONLY);
     if (fd < 0) return;
-    char buf[8];
-    snprintf(buf, sizeof(buf), "%d", pin);
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%d", sysfs_pin);
     (void)write(fd, buf, strlen(buf));
     close(fd);
     usleep(50000);  /* wait for udev to set permissions */
 }
 
-static void gpio_direction (int pin, const char *dir) {
+static void gpio_direction (int bcm_pin, const char *dir) {
+    int sysfs_pin = gpio_sysfs_num(bcm_pin);
     char path[80];
-    snprintf(path, sizeof(path), "/sys/class/gpio/gpio%d/direction", pin);
+    snprintf(path, sizeof(path), "/sys/class/gpio/gpio%d/direction", sysfs_pin);
     int fd = open(path, O_WRONLY);
     if (fd < 0) return;
     (void)write(fd, dir, strlen(dir));
     close(fd);
 }
 
-static void gpio_write (int pin, int val) {
+static void gpio_write (int bcm_pin, int val) {
+    int sysfs_pin = gpio_sysfs_num(bcm_pin);
     char path[80];
-    snprintf(path, sizeof(path), "/sys/class/gpio/gpio%d/value", pin);
+    snprintf(path, sizeof(path), "/sys/class/gpio/gpio%d/value", sysfs_pin);
     int fd = open(path, O_WRONLY);
     if (fd < 0) return;
     (void)write(fd, val ? "1" : "0", 1);
     close(fd);
 }
 
-static int gpio_read (int pin) {
+static int gpio_read (int bcm_pin) {
+    int sysfs_pin = gpio_sysfs_num(bcm_pin);
     char path[80];
-    snprintf(path, sizeof(path), "/sys/class/gpio/gpio%d/value", pin);
+    snprintf(path, sizeof(path), "/sys/class/gpio/gpio%d/value", sysfs_pin);
     int fd = open(path, O_RDONLY);
     if (fd < 0) return 0;
     char c = '0';
@@ -276,7 +328,12 @@ static void spi_transfer (int fd, int cs_pin, const uint8_t *tx, uint8_t *rx, in
         .delay_usecs   = 0,
         .bits_per_word = 8,
     };
-    ioctl(fd, SPI_IOC_MESSAGE(1), &t);
+    int ret = ioctl(fd, SPI_IOC_MESSAGE(1), &t);
+    if (ret < 0) {
+        text_color_set(DW_COLOR_ERROR);
+        dw_printf ("loraspi: spi_transfer ioctl failed: fd=%d ret=%d errno=%d (%s)\n",
+                   fd, ret, errno, strerror(errno));
+    }
     if (cs_pin >= 0) gpio_write(cs_pin, 1);
 }
 
@@ -605,7 +662,7 @@ static bool sx1262_init (lora_chan_t *lc) {
         else if (lc->tcxo_voltage < 2.85f) vcode = 5;
         else if (lc->tcxo_voltage < 3.15f) vcode = 6;
         else                                vcode = 7;
-        uint8_t tcxo_cmd[5] = { SX1262_CMD_SET_DIO3_TCXO, vcode, 0x00, 0x00, 0x64 }; /* 100 * 15.625 us ≈ 1.5 ms */
+        uint8_t tcxo_cmd[5] = { SX1262_CMD_SET_DIO3_TCXO, vcode, 0x00, 0x01, 0x40 }; /* 320 * 15.625 us = 5 ms */
         uint8_t tcxo_rx[5];
         sx1262_cmd(lc, tcxo_cmd, tcxo_rx, 5);
         usleep(5000);
@@ -714,6 +771,7 @@ static int sx1262_receive (lora_chan_t *lc, uint8_t *buf, int maxlen,
     uint8_t get_irq[4] = { SX1262_CMD_GET_IRQ_STATUS, 0, 0, 0 };
     uint8_t irq_rx[4];
     sx1262_cmd(lc, get_irq, irq_rx, 4);
+    /* irq_rx[0]=status, [1]=echoed status, [2]=IRQ[15:8], [3]=IRQ[7:0] */
     uint16_t irq = ((uint16_t)irq_rx[2] << 8) | irq_rx[3];
 
     uint8_t clr[3] = { SX1262_CMD_CLR_IRQ_STATUS, 0xFF, 0xFF };
@@ -727,8 +785,9 @@ static int sx1262_receive (lora_chan_t *lc, uint8_t *buf, int maxlen,
     uint8_t get_buf[4] = { SX1262_CMD_GET_RX_BUFFER_STATUS, 0, 0, 0 };
     uint8_t buf_rx[4];
     sx1262_cmd(lc, get_buf, buf_rx, 4);
-    int nb     = buf_rx[2];
-    int offset = buf_rx[3];
+    /* buf_rx[0]=status, [1]=payloadLength, [2]=rxStartBufferPointer */
+    int nb     = buf_rx[1];
+    int offset = buf_rx[2];
     if (nb <= 0 || nb > maxlen) return -1;
 
     /* Read buffer (fixed max 256 bytes payload) */
@@ -752,10 +811,21 @@ static int sx1262_receive (lora_chan_t *lc, uint8_t *buf, int maxlen,
 }
 
 static bool sx1262_transmit (lora_chan_t *lc, const uint8_t *data, int len) {
-    /* Write buffer (fixed max 256 bytes payload) */
+    if (len > 256) return false;
+
+    /* Go to STBY_RC before TX */
+    uint8_t stby[2] = { SX1262_CMD_SET_STANDBY, 0x00 };   /* STBY_RC */
+    uint8_t stby_rx[2];
+    sx1262_cmd(lc, stby, stby_rx, 2);
+    usleep(50000);  /* 50 ms — let chip settle */
+
+    /* Enable TX path, disable RX path */
+    if (lc->pin_tx_en >= 0) gpio_write(lc->pin_tx_en, 1);
+    if (lc->pin_rx_en >= 0) gpio_write(lc->pin_rx_en, 0);
+
+    /* Write buffer */
     uint8_t wr_cmd[256 + 2];
     uint8_t wr_rx[256 + 2];
-    if (len > 256) return false;
     wr_cmd[0] = SX1262_CMD_WRITE_BUFFER;
     wr_cmd[1] = 0x00;   /* offset */
     memcpy(wr_cmd + 2, data, len);
@@ -772,24 +842,36 @@ static bool sx1262_transmit (lora_chan_t *lc, const uint8_t *data, int len) {
     uint8_t tx_rx[4];
     sx1262_cmd(lc, tx_cmd, tx_rx, 4);
 
-    /* Poll TX_DONE via IRQ (timeout 10 s) */
-    for (int i = 0; i < 10000; i++) {
+    /* Poll TX_DONE via IRQ (timeout 12 s) */
+    bool ok = false;
+    for (int i = 0; i < 12000; i++) {
         usleep(1000);
         uint8_t gi[4] = { SX1262_CMD_GET_IRQ_STATUS, 0, 0, 0 };
         uint8_t gr[4];
         sx1262_cmd(lc, gi, gr, 4);
+        /* gr[0]=status, [1]=echoed status, [2]=IRQ[15:8], [3]=IRQ[7:0] */
         uint16_t irq = ((uint16_t)gr[2] << 8) | gr[3];
         if (irq & SX1262_IRQ_TX_DONE) {
             uint8_t clr[3] = { SX1262_CMD_CLR_IRQ_STATUS, 0xFF, 0xFF };
             uint8_t clr_rx[3];
             sx1262_cmd(lc, clr, clr_rx, 3);
-            return true;
+            ok = true;
+            break;
         }
     }
-    return false;
+
+    /* Restore RX path */
+    if (lc->pin_tx_en >= 0) gpio_write(lc->pin_tx_en, 0);
+    if (lc->pin_rx_en >= 0) gpio_write(lc->pin_rx_en, 1);
+
+    return ok;
 }
 
 static void sx1262_start_rx (lora_chan_t *lc) {
+    /* Enable RX path, disable TX path */
+    if (lc->pin_tx_en >= 0) gpio_write(lc->pin_tx_en, 0);
+    if (lc->pin_rx_en >= 0) gpio_write(lc->pin_rx_en, 1);
+
     uint8_t clr[3] = { SX1262_CMD_CLR_IRQ_STATUS, 0xFF, 0xFF };
     uint8_t clr_rx[3];
     sx1262_cmd(lc, clr, clr_rx, 3);
