@@ -229,7 +229,8 @@ profile names.
 
 | Profile name | Module | Chip | Frequency |
 |---|---|---|---|
-| `lorapi_rfm95w` | Digital Concepts LoRa-Pi (RFM95W) | SX1276 | 433/868/915 MHz |
+| `lorapi_rfm95w` | Digital Concepts LoRa-Pi (RFM95W) | SX1276 | 868/915 MHz |
+| `lorapi_rfm98w` | Digital Concepts LoRa-Pi (RFM98W) | SX1278 | 433 MHz |
 | `generic_sx1276` | Generic SX1276/SX1278 breakout | SX1276 | varies |
 | `meshadv` | MeshAdv-Pi Hat | SX1262 | 900 MHz |
 | `e22_900m30s` | Ebyte E22-900M30S | SX1262 | 868/915 MHz |

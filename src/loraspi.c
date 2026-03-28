@@ -176,6 +176,7 @@ static const hw_profile_t s_profiles[] = {
     { "e22_400m30s",      LORA_CHIP_SX1262, 0, 0,  8,  25,  24,  23,  17,  27,  false, true,  1.8f },
     { "ebyte_e22",        LORA_CHIP_SX1262, 0, 0,  8,  25,  24,  23,  -1,  -1,  false, true,  1.8f },
     { "lorapi_rfm95w",    LORA_CHIP_SX1276, 0, 1,  7,  22,  -1,  -1,  -1,  -1,  true,  false, 0.0f },
+    { "lorapi_rfm98w",    LORA_CHIP_SX1276, 0, 1,  7,  22,  -1,  -1,  -1,  -1,  true,  false, 0.0f },
     { "generic_sx1276",   LORA_CHIP_SX1276, 0, 0,  8,  25,  24,  -1,  -1,  -1,  true,  false, 0.0f },
     { NULL, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, false, 0.0f }
 };
