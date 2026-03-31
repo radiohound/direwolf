@@ -748,8 +748,8 @@ static bool sx1262_init (lora_chan_t *lc) {
     sx1262_write_reg(lc, 0x0740, sw_hi);
     sx1262_write_reg(lc, 0x0741, sw_lo);
 
-    /* Buffer base addresses: TX=0x00, RX=0x00 */
-    uint8_t buf_base[3] = { SX1262_CMD_SET_BUFFER_BASE_ADDR, 0x00, 0x00 };
+    /* Buffer base addresses: TX=0x00, RX=0x80 (separate halves to prevent overlap) */
+    uint8_t buf_base[3] = { SX1262_CMD_SET_BUFFER_BASE_ADDR, 0x00, 0x80 };
     uint8_t buf_rx[3];
     sx1262_cmd(lc, buf_base, buf_rx, 3);
 
@@ -785,9 +785,10 @@ static int sx1262_receive (lora_chan_t *lc, uint8_t *buf, int maxlen,
     uint8_t get_buf[4] = { SX1262_CMD_GET_RX_BUFFER_STATUS, 0, 0, 0 };
     uint8_t buf_rx[4];
     sx1262_cmd(lc, get_buf, buf_rx, 4);
-    /* buf_rx[0]=status, [1]=payloadLength, [2]=rxStartBufferPointer */
-    int nb     = buf_rx[1];
-    int offset = buf_rx[2];
+    /* SX1262 echoes status on both byte[0] and byte[1]; data starts at byte[2] */
+    /* buf_rx[0]=status, [1]=status(echo), [2]=payloadLength, [3]=rxStartBufferPointer */
+    int nb     = buf_rx[2];
+    int offset = buf_rx[3];
     if (nb <= 0 || nb > maxlen) return -1;
 
     /* Read buffer (fixed max 256 bytes payload) */

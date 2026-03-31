@@ -227,16 +227,24 @@ Profiles are defined in `hardware_profiles.yaml` (Python bridge) or selected
 with `LORAHW` in `direwolf.conf` (native SPI driver).  Both use the same
 profile names.
 
-| Profile name | Module | Chip | Frequency |
-|---|---|---|---|
-| `lorapi_rfm95w` | Digital Concepts LoRa-Pi (RFM95W) | SX1276 | 868/915 MHz |
-| `lorapi_rfm98w` | Digital Concepts LoRa-Pi (RFM98W) | SX1278 | 433 MHz |
-| `generic_sx1276` | Generic SX1276/SX1278 breakout | SX1276 | varies |
-| `meshadv` | MeshAdv-Pi Hat | SX1262 | 900 MHz |
-| `e22_900m30s` | Ebyte E22-900M30S | SX1262 | 868/915 MHz |
-| `e22_400m30s` | Ebyte E22-400M30S | SX1268 | 433/470 MHz |
-| `ebyte_e22` | Ebyte E22 generic | SX1262 | varies |
-| `ttgo_uart` | TTGO/Heltec over USB serial | external | varies |
+| Profile name | Module | Chip | Frequency | TX tested | RX tested |
+|---|---|---|---|---|---|
+| `lorapi_rfm95w` | Digital Concepts LoRa-Pi (RFM95W) | SX1276 | 868/915 MHz | | |
+| `lorapi_rfm98w` | Digital Concepts LoRa-Pi (RFM98W) | SX1278 | 433 MHz | yes | yes |
+| `generic_sx1276` | Generic SX1276/SX1278 breakout | SX1276 | varies | | |
+| `meshadv` | MeshAdv-Pi Hat (E22-400M30S, 1W PA) | SX1262 | 433 MHz | yes | yes |
+| `e22_900m30s` | Ebyte E22-900M30S | SX1262 | 868/915 MHz | | |
+| `e22_400m30s` | Ebyte E22-400M30S | SX1262 | 433/470 MHz | | |
+| `ebyte_e22` | Ebyte E22 generic | SX1262 | varies | | |
+| `ttgo_uart` | TTGO/Heltec over USB serial | external | varies | | |
+
+> **SX1262 note:** The SX1262 GET_RX_BUFFER_STATUS command echoes the status
+> byte twice before returning payload length and buffer pointer.  The native
+> driver (`loraspi.c`) accounts for this — bytes `[2]` and `[3]` of the
+> response are the actual `RxPayloadLength` and `RxStartBufferPointer`,
+> not `[1]` and `[2]` as implied by some versions of the datasheet.  If
+> you are porting this code to another platform, watch out for this or you
+> will receive garbled, over-length packets.
 
 To add a new profile for the **Python bridge**, copy an existing entry in
 `hardware_profiles.yaml` and adjust the SPI bus, GPIO pins, and chip type.
