@@ -1475,7 +1475,7 @@ void config_init (char *fname, struct audio_s *p_audio_config,
 	        p_audio_config->lora_sf[lchan]           = 12;
 	        p_audio_config->lora_bw_khz[lchan]       = 125.0f;
 	        p_audio_config->lora_cr[lchan]           = 5;
-	        p_audio_config->lora_sw[lchan]           = 0x34;	/* LoRa-APRS sync word */
+	        p_audio_config->lora_sw[lchan]           = 0x12;	/* LoRa-APRS sync word */
 	        p_audio_config->lora_txpower[lchan]      = 20;
 	        p_audio_config->lora_pin_cs[lchan]       = -1;
 	        p_audio_config->lora_pin_reset[lchan]    = -1;
@@ -1593,8 +1593,8 @@ void config_init (char *fname, struct audio_s *p_audio_config,
 	  }
 
 /*
- * LORASW  sync_word_hex    (0x12 for private, 0x34 for LoRa-APRS standard)
- *	Example: LORASW 0x34
+ * LORASW  sync_word_hex    (0x12 for LoRa-APRS standard)
+ * Example: LORASW 0x12
  */
 	  else if (strcasecmp(t, "LORASW") == 0) {
 	    if (channel < MAX_RADIO_CHANS || p_audio_config->chan_medium[channel] != MEDIUM_LORA) {

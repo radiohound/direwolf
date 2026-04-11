@@ -181,7 +181,7 @@ struct audio_s {
 	int  lora_sf[MAX_TOTAL_CHANS];			// Spreading factor 6-12
 	float lora_bw_khz[MAX_TOTAL_CHANS];		// Bandwidth: 125, 250, 500 kHz
 	int  lora_cr[MAX_TOTAL_CHANS];			// Coding rate 5-8 (denominator of 4/x)
-	int  lora_sw[MAX_TOTAL_CHANS];			// Sync word (0x12 private, 0x34 LoRa-APRS)
+	int  lora_sw[MAX_TOTAL_CHANS];			// Sync word (0x12 = LoRa-APRS standard)
 	int  lora_txpower[MAX_TOTAL_CHANS];		// TX power dBm
 	int  lora_pin_cs[MAX_TOTAL_CHANS];		// GPIO chip-select (BCM)
 	int  lora_pin_reset[MAX_TOTAL_CHANS];		// GPIO reset (-1 = not wired)

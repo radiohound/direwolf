@@ -2,7 +2,7 @@
 # install-lora.sh — Dire Wolf LoRa APRS installer
 #
 # Supported hardware:
-#   Pi 3  — direwolf + native SPI driver (LCHANNEL) + Python bridge (LORAPORT)
+#   Pi 3  — direwolf + native SPI driver (LCHANNEL)
 #           SDR path skipped (too CPU-intensive for Pi 3)
 #   Pi 4  — full install: all of the above + GNU Radio + gr-lora_sdr + SDR bridge
 #   Pi 5  — same as Pi 4 (not yet fully tested)
@@ -125,7 +125,7 @@ prompt_config() {
 
     LORAFREQ=""
     while [ -z "$LORAFREQ" ]; do
-        printf "LoRa frequency MHz (e.g. 915.000 for Americas, 433.775 for elsewhere): " > /dev/tty
+        printf "LoRa frequency MHz (433.775 MHz is standard worldwide): " > /dev/tty
         read -r LORAFREQ < /dev/tty || true
         [ -z "$LORAFREQ" ] && warn "Frequency cannot be empty."
     done
@@ -270,8 +270,6 @@ install_scripts() {
     src_dir="$(cd "$(dirname "$0")" && pwd)"
 
     info "Installing bridge scripts..."
-    install -m 755 "$src_dir/scripts/lora_kiss_bridge.py"    /usr/local/bin/lora_kiss_bridge.py
-    install -m 755 "$src_dir/scripts/hardware_profiles.yaml" /usr/local/bin/hardware_profiles.yaml
 
     if [ "$PI_MODEL" -ge 4 ]; then
         install -m 755 "$src_dir/scripts/lora_sdr_bridge.py"    /usr/local/bin/lora_sdr_bridge.py

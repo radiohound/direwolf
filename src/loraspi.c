@@ -131,7 +131,7 @@ typedef struct {
     /* RF config */
     float       freq_mhz;
     int         sf;
-    int         bw_khz;
+    float       bw_khz;
     int         cr;             /* coding rate denominator: 5..8 */
     int         sw;             /* sync word */
     int         txpower;        /* dBm */
@@ -665,7 +665,7 @@ static bool sx1262_init (lora_chan_t *lc) {
         uint8_t tcxo_cmd[5] = { SX1262_CMD_SET_DIO3_TCXO, vcode, 0x00, 0x01, 0x40 }; /* 320 * 15.625 us = 5 ms */
         uint8_t tcxo_rx[5];
         sx1262_cmd(lc, tcxo_cmd, tcxo_rx, 5);
-        usleep(5000);
+        usleep(10000);
     }
 
     /* DIO2 as RF switch (handles TXEN/RXEN internally on most modules) */
@@ -680,7 +680,7 @@ static bool sx1262_init (lora_chan_t *lc) {
     else                              { cal_cmd[1] = 0xD7; cal_cmd[2] = 0xDB; }
     uint8_t cal_rx[3];
     sx1262_cmd(lc, cal_cmd, cal_rx, 3);
-    usleep(5000);
+    usleep(100000);
 
     /* LoRa packet type */
     uint8_t pt[2] = { SX1262_CMD_SET_PACKET_TYPE, 0x01 };
@@ -740,7 +740,7 @@ static bool sx1262_init (lora_chan_t *lc) {
 
     /* Sync word: SX1262 uses 2 bytes at 0x0740/0x0741.
      * The SX1276-style single byte (e.g. 0x12) maps to SX1262 format by
-     * expanding each nibble: 0x12 -> 0x1424, 0x34 -> 0x3444.
+     * expanding each nibble: e.g. 0x12 (LoRa-APRS) -> 0x1424.
      * Formula: high = (sw >> 4 & 0x0F) << 4 | 0x04
      *          low  = (sw      & 0x0F) << 4 | 0x04  */
     uint8_t sw_hi = (uint8_t)(((lc->sw >> 4) & 0x0F) << 4 | 0x04);
@@ -1087,7 +1087,7 @@ void loraspi_init (struct audio_s *pa) {
         }
 
         text_color_set(DW_COLOR_INFO);
-        dw_printf ("LoRa channel %d: %.3f MHz  SF%d  BW%d kHz  %s\n",
+        dw_printf ("LoRa channel %d: %.3f MHz  SF%d  BW%.1f kHz  %s\n",
             chan, lc->freq_mhz, lc->sf, lc->bw_khz,
             lc->chip == LORA_CHIP_SX1276 ? "SX1276" : "SX1262");
 
