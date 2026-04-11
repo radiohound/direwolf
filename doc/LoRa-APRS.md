@@ -1,65 +1,89 @@
 # LoRa APRS with Dire Wolf
 
-This document describes how to use Dire Wolf as an iGate, digipeater, and
-decoder for LoRa APRS using a Raspberry Pi with a supported LoRa hat.
+This document describes how to use Dire Wolf as an iGate, digipeater, and decoder for LoRa APRS using a Raspberry Pi with a supported LoRa hat.
 
 ## How it works
+
 ```
 LoRa hat (SX1276 / SX1262 wired to SPI bus)
-│
-│  Linux spidev + sysfs GPIO
-▼
-Dire Wolf (loraspi.c)  ←  direwolf.conf (LCHANNEL, LORAHW, LORAFREQ …)
-│
+|
+| Linux spidev + sysfs GPIO
+v
+Dire Wolf (loraspi.c) <- direwolf.conf (LCHANNEL, LORAHW, LORAFREQ ...)
+|
 iGate / digipeater / decoder
 ```
 
-Dire Wolf talks directly to the LoRa chip over SPI. No Python packages or
-separate processes are required — the LoRa channel starts automatically
-when Dire Wolf starts.
+Dire Wolf talks directly to the LoRa chip over SPI. No Python packages or separate processes are required -- the LoRa channel starts automatically when Dire Wolf starts.
 
 ## Requirements
 
 - Raspberry Pi (any model with SPI)
 - Supported LoRa hat (see Hardware Profiles below)
 
-**SPI and I2C must be enabled** before Dire Wolf can communicate with the
-LoRa hat:
+---
+
+## Installation
+
+1. Update your system and reboot:
+
+```bash
+sudo apt update && sudo apt upgrade -y
+sudo reboot
+```
+
+2. Clone the repository and check out the branch:
+
+```bash
+git clone https://github.com/radiohound/direwolf.git
+cd direwolf
+git checkout feature/lora-spi-v2
+```
+
+3. Run the install script:
+
+```bash
+sudo bash install-lora.sh
+```
+
+The script installs dependencies, builds Dire Wolf, and creates a starter direwolf.conf at /etc/direwolf/direwolf.conf.
+
+4. Enable SPI and I2C, then reboot:
+
 ```bash
 sudo raspi-config nonint do_spi 0
 sudo raspi-config nonint do_i2c 0
 sudo reboot
 ```
 
-Verify SPI with: `ls /dev/spidev*` — you should see `/dev/spidev0.0` and
-`/dev/spidev0.1`.
+Verify SPI with: ls /dev/spidev* -- you should see /dev/spidev0.0 and /dev/spidev0.1.
 
 ---
 
 ## Configuration (direwolf.conf)
 
-The `LCHANNEL` block must appear **before** any `PBEACON` lines that
-reference that channel number.
+The LCHANNEL block must appear **before** any PBEACON lines that reference that channel number.
+
 ```
 # No physical audio device (LoRa-only setup)
 ADEVICE null null
 
-# LoRa SPI hat — native driver
+# LoRa SPI hat -- native driver
 # Must appear before any PBEACON lines referencing channel 10
 LCHANNEL 10
 MYCALL W1ABC-10
-LORAHW    lorapi_rfm95w  # hardware profile (see table below)
-LORAFREQ  433.775        # MHz (standard worldwide)
-LORASF    12             # spreading factor
-LORABW    125            # kHz bandwidth
-LORACR    5              # coding rate 4/5
-LORASW    0x12           # LoRa APRS sync word
-LORATXPOWER 17           # dBm
+LORAHW lorapi_rfm95w        # hardware profile (see table below)
+LORAFREQ 433.775            # MHz (standard worldwide)
+LORASF 12                   # spreading factor
+LORABW 125                  # kHz bandwidth
+LORACR 5                    # coding rate 4/5
+LORASW 0x12                 # LoRa APRS sync word
+LORATXPOWER 17              # dBm
 
 # Position beacon over LoRa RF
 PBEACON delay=1 every=30 sendto=10 overlay=L symbol="igate" lat=0.0000 long=0.0000 comment="LoRa APRS iGate"
 
-# iGate — forward received packets to APRS-IS
+# iGate -- forward received packets to APRS-IS
 IGSERVER noam.aprs2.net
 IGLOGIN W1ABC-10 12345
 
@@ -67,24 +91,27 @@ IGLOGIN W1ABC-10 12345
 PBEACON delay=1 every=30 sendto=IG overlay=L symbol="igate" lat=0.0000 long=0.0000 comment="LoRa APRS iGate"
 ```
 
-Replace `0.0000` with your actual latitude and longitude in decimal degrees.
-Replace `lorapi_rfm95w` with the profile matching your hardware (see table below).
+Replace 0.0000 with your actual latitude and longitude in decimal degrees.
+Replace lorapi_rfm95w with the profile matching your hardware (see table below).
 Generate your APRS passcode at https://apps.magicbug.co.uk/passcode if needed.
 
 ---
 
 ## Starting Dire Wolf
+
 ```bash
 direwolf -c /etc/direwolf/direwolf.conf
 ```
 
 On a successful start you will see:
+
 ```
 loraspi: GPIO chip base offset = 0
-LoRa channel 10: 433.775 MHz  SF12  BW125.0 kHz  SX1262
+LoRa channel 10: 433.775 MHz SF12 BW125.0 kHz SX1262
 ```
 
 ### Run as a systemd service
+
 ```bash
 sudo cp systemd/direwolf.service /etc/systemd/system/
 sudo systemctl daemon-reload
@@ -92,13 +119,14 @@ sudo systemctl enable direwolf
 sudo systemctl start direwolf
 ```
 
-Monitor: `journalctl -u direwolf -f`
+Monitor: journalctl -u direwolf -f
 
 ---
 
 ## Digipeating LoRa packets (optional)
+
 ```
-# In direwolf.conf — use the channel number from LCHANNEL
+# In direwolf.conf -- use the channel number from LCHANNEL
 DIGIPEAT 10 10 ^TEST$ ^WIDE[12]-[12]$
 ```
 
@@ -106,28 +134,25 @@ DIGIPEAT 10 10 ^TEST$ ^WIDE[12]-[12]$
 
 ## Hardware Profiles
 
-Profiles are selected with `LORAHW` in `direwolf.conf`. They are defined
-in the `s_profiles[]` array in `src/loraspi.c`.
+Profiles are selected with LORAHW in direwolf.conf. They are defined in the s_profiles[] array in src/loraspi.c.
 
 | Profile name | Module | Chip | Frequency | TX tested | RX tested |
 |---|---|---|---|---|---|
-| `lorapi_rfm95w` | Digital Concepts LoRa-Pi (RFM95W) | SX1276 | 868/915 MHz | | |
-| `lorapi_rfm98w` | Digital Concepts LoRa-Pi (RFM98W) | SX1278 | 433 MHz | yes | yes |
-| `generic_sx1276` | Generic SX1276/SX1278 breakout | SX1276 | varies | | |
-| `meshadv` | MeshAdv-Pi Hat (E22-400M30S, 1W PA) | SX1262 | 433 MHz | yes | yes |
-| `e22_900m30s` | Ebyte E22-900M30S | SX1262 | 868/915 MHz | | |
-| `e22_400m30s` | Ebyte E22-400M30S | SX1262 | 433/470 MHz | | |
-| `ebyte_e22` | Ebyte E22 generic | SX1262 | varies | | |
+| lorapi_rfm95w | Digital Concepts LoRa-Pi (RFM95W) | SX1276 | 868/915 MHz | | |
+| lorapi_rfm98w | Digital Concepts LoRa-Pi (RFM98W) | SX1278 | 433 MHz | yes | yes |
+| generic_sx1276 | Generic SX1276/SX1278 breakout | SX1276 | varies | | |
+| meshadv | MeshAdv-Pi Hat (E22-400M30S, 1W PA) | SX1262 | 433 MHz | yes | yes |
+| e22_900m30s | Ebyte E22-900M30S | SX1262 | 868/915 MHz | | |
+| e22_400m30s | Ebyte E22-400M30S | SX1262 | 433/470 MHz | | |
+| ebyte_e22 | Ebyte E22 generic | SX1262 | varies | | |
 
-To add support for a new LoRa hat, add a row to the `s_profiles[]` array
-in `src/loraspi.c` and rebuild Dire Wolf.
+To add support for a new LoRa hat, add a row to the s_profiles[] array in src/loraspi.c and rebuild Dire Wolf.
 
 ---
 
 ## LoRa APRS frequency
 
 433.775 MHz is the standard LoRa APRS frequency worldwide.
-
 Standard parameters: SF12, BW125, CR4/5, sync word 0x12.
 
 ---
@@ -140,29 +165,25 @@ Standard parameters: SF12, BW125, CR4/5, sync word 0x12.
 | Magenta | Packet transmitted over LoRa radio |
 | Red | Error or invalid/dropped packet |
 
-Colors are suppressed automatically when output is redirected to a file or
-systemd journal.
+Colors are suppressed automatically when output is redirected to a file or systemd journal.
 
 ---
 
 ## Troubleshooting
 
 **No init message at startup**
-- Check SPI is enabled: `ls /dev/spidev*`
-- Check I2C is enabled: `ls /dev/i2c*`
-- Verify `LORAHW` in `direwolf.conf` matches a known profile name (case-sensitive)
-- Check SPI device permissions: `ls -l /dev/spidev*`
-- Ensure the `LCHANNEL` block appears before any `PBEACON` lines in `direwolf.conf`
+- Check SPI is enabled: ls /dev/spidev*
+- Check I2C is enabled: ls /dev/i2c*
+- Verify LORAHW in direwolf.conf matches a known profile name (case-sensitive)
+- Check SPI device permissions: ls -l /dev/spidev*
+- Ensure the LCHANNEL block appears before any PBEACON lines in direwolf.conf
 - Make sure the LoRa hat is fully and correctly seated on the GPIO header
 
 **"Config file: Send to channel N is not valid"**
-- The `LCHANNEL` block must appear **before** any `PBEACON sendto=N` lines
-  in `direwolf.conf`. Move the `LCHANNEL` block to the top of the file.
+- The LCHANNEL block must appear **before** any PBEACON sendto=N lines in direwolf.conf. Move the LCHANNEL block to the top of the file.
 
 **SX1262 BUSY timeout at startup**
-- The SX1262 TCXO needs time to stabilize. This is handled automatically
-  by the driver. If you still see BUSY timeouts, check that the hat is
-  properly seated and powered.
+- The SX1262 TCXO needs time to stabilize. This is handled automatically by the driver. If you still see BUSY timeouts, check that the hat is properly seated and powered.
 
 **No packets received**
 - Confirm frequency and sync word match other stations (433.775 MHz, 0x12 is standard)
@@ -174,41 +195,39 @@ systemd journal.
 
 ## Adding support for a new LoRa hat
 
-Hardware profiles are defined in the `s_profiles[]` array in `src/loraspi.c`.
-Each row defines the chip type, SPI bus, and GPIO pin assignments for one hat.
+Hardware profiles are defined in the s_profiles[] array in src/loraspi.c. Each row defines the chip type, SPI bus, and GPIO pin assignments for one hat.
 
 To add a new profile:
 
-1. Open `src/loraspi.c` and find the `s_profiles[]` array.
-
+1. Open src/loraspi.c and find the s_profiles[] array.
 2. Add a new row following this format:
+
 ```c
 { "profile_name", LORA_CHIP_SX1262, bus, dev, cs, reset, irq, busy, tx_en, rx_en, pa_boost, tcxo, tcxo_voltage },
 ```
 
 | Field | Description |
 |-------|-------------|
-| `profile_name` | Name used in `LORAHW` in `direwolf.conf` |
-| chip | `LORA_CHIP_SX1276` or `LORA_CHIP_SX1262` |
-| `bus`, `dev` | SPI bus and device (usually 0, 0) |
-| `cs` | BCM GPIO pin number for chip select |
-| `reset` | BCM GPIO pin number for reset |
-| `irq` | BCM GPIO pin number for DIO0 (SX1276) or DIO1 (SX1262) |
-| `busy` | BCM GPIO pin for BUSY (SX1262 only, -1 for SX1276) |
-| `tx_en` | BCM GPIO pin for TX enable (-1 if not used) |
-| `rx_en` | BCM GPIO pin for RX enable (-1 if not used) |
-| `pa_boost` | `true` for SX1276 PA_BOOST pin, `false` for RFO |
-| `tcxo` | `true` if the module uses a TCXO (most SX1262 modules do) |
-| `tcxo_voltage` | TCXO voltage in volts (typically 1.8) |
+| profile_name | Name used in LORAHW in direwolf.conf |
+| chip | LORA_CHIP_SX1276 or LORA_CHIP_SX1262 |
+| bus, dev | SPI bus and device (usually 0, 0) |
+| cs | BCM GPIO pin number for chip select |
+| reset | BCM GPIO pin number for reset |
+| irq | BCM GPIO pin number for DIO0 (SX1276) or DIO1 (SX1262) |
+| busy | BCM GPIO pin for BUSY (SX1262 only, -1 for SX1276) |
+| tx_en | BCM GPIO pin for TX enable (-1 if not used) |
+| rx_en | BCM GPIO pin for RX enable (-1 if not used) |
+| pa_boost | true for SX1276 PA_BOOST pin, false for RFO |
+| tcxo | true if the module uses a TCXO (most SX1262 modules do) |
+| tcxo_voltage | TCXO voltage in volts (typically 1.8) |
 
-3. Pin numbers are BCM GPIO numbers. Check your hat's schematic or
-   documentation for the correct assignments.
-
+3. Pin numbers are BCM GPIO numbers. Check your hat's schematic or documentation for the correct assignments.
 4. Rebuild and reinstall Dire Wolf:
+
 ```bash
 cd ~/direwolf
 make -C build -j$(nproc)
 sudo make -C build install
 ```
 
-5. Set `LORAHW your_profile_name` in `direwolf.conf` and start Dire Wolf.
+5. Set LORAHW your_profile_name in direwolf.conf and start Dire Wolf.
