@@ -1087,8 +1087,8 @@ void loraspi_init (struct audio_s *pa) {
         }
 
         text_color_set(DW_COLOR_INFO);
-        dw_printf ("LoRa channel %d: %.3f MHz  SF%d  BW%.1f kHz  %s\n",
-            chan, lc->freq_mhz, lc->sf, lc->bw_khz,
+        dw_printf ("LoRa channel %d: %.3f MHz  SF%d  BW%.1f kHz  CR 4/%d  %s\n",
+            chan, lc->freq_mhz, lc->sf, lc->bw_khz, lc->cr,
             lc->chip == LORA_CHIP_SX1276 ? "SX1276" : "SX1262");
 
         /* Start threads */
