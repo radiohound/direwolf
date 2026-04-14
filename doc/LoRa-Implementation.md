@@ -304,3 +304,10 @@ Key design decisions that upstream reviewers may ask about:
   chains and keeps board-specific data in one place. Future improvement: read profiles
   from an external file (e.g. `hardware_profiles.yaml`) at runtime so users can add
   new hat support without recompiling.
+
+- **TX power clamping** — each profile includes a `max_tx_power_dbm` field representing
+  the maximum safe value for the `LORATXPOWER` directive. On modules with an external PA
+  (e.g. 33S variants), this is the maximum safe input to the SX1262 register, not the RF
+  output power. `loraspi_init()` compares `LORATXPOWER` against this limit at startup and
+  clamps it with an error message if exceeded. This prevents users from accidentally
+  over-driving the external PA and damaging the module.

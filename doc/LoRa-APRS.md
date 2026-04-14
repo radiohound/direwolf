@@ -107,7 +107,7 @@ On a successful start you will see:
 
 ```
 loraspi: GPIO chip base offset = 0
-LoRa channel 10: 433.775 MHz SF12 BW125.0 kHz SX1262
+LoRa channel 10: 433.775 MHz SF12 BW125.0 kHz CR 4/5 SX1262
 ```
 
 ### Run as a systemd service
@@ -136,15 +136,17 @@ DIGIPEAT 10 10 ^TEST$ ^WIDE[12]-[12]$
 
 Profiles are selected with LORAHW in direwolf.conf. They are defined in the s_profiles[] array in src/loraspi.c.
 
-| Profile name | Module | Chip | Frequency | TX tested | RX tested |
-|---|---|---|---|---|---|
-| lorapi_rfm95w | Digital Concepts LoRa-Pi (RFM95W) | SX1276 | 868/915 MHz | | |
-| lorapi_rfm98w | Digital Concepts LoRa-Pi (RFM98W) | SX1278 | 433 MHz | yes | yes |
-| generic_sx1276 | Generic SX1276/SX1278 breakout | SX1276 | varies | | |
-| meshadv | MeshAdv-Pi Hat (E22-400M30S, 1W PA) | SX1262 | 433 MHz | yes | yes |
-| e22_900m30s | Ebyte E22-900M30S | SX1262 | 868/915 MHz | | |
-| e22_400m30s | Ebyte E22-400M30S | SX1262 | 433/470 MHz | | |
-| ebyte_e22 | Ebyte E22 generic | SX1262 | varies | | |
+| Profile name | Module | Chip | Frequency | Max LORATXPOWER | TX tested | RX tested |
+|---|---|---|---|---|---|---|
+| meshadv_400m30s | MeshAdv-Pi Hat (E22-400M30S, 1W) | SX1262 | 433/470 MHz | 22 dBm | yes | yes |
+| meshadv_400m33s | MeshAdv-Pi Hat (E22-400M33S, 2W) | SX1262 | 433/470 MHz | 8 dBm | | |
+| meshadv_900m30s | MeshAdv-Pi Hat (E22-900M30S, 1W) | SX1262 | 868/915 MHz | 22 dBm | | |
+| meshadv_900m33s | MeshAdv-Pi Hat (E22-900M33S, 2W) | SX1262 | 868/915 MHz | 8 dBm | | |
+| lorapi_rfm95w | Digital Concepts LoRa-Pi (RFM95W) | SX1276 | 868/915 MHz | 17 dBm | | |
+| lorapi_rfm98w | Digital Concepts LoRa-Pi (RFM98W) | SX1278 | 433 MHz | 17 dBm | yes | yes |
+| generic_sx1276 | Generic SX1276/SX1278 breakout | SX1276 | varies | 17 dBm | | |
+
+> **33S modules:** The `max_tx_power_dbm` for 33S variants is the maximum safe input to the SX1262 register — the external PA amplifies this to ~33 dBm output. Setting `LORATXPOWER` above 8 on a 33S module will damage the PA. Dire Wolf enforces this limit automatically and will print an error and clamp the value if exceeded.
 
 To add support for a new LoRa hat, add a row to the s_profiles[] array in src/loraspi.c and rebuild Dire Wolf.
 
@@ -203,7 +205,7 @@ To add a new profile:
 2. Add a new row following this format:
 
 ```c
-{ "profile_name", LORA_CHIP_SX1262, bus, dev, cs, reset, irq, busy, tx_en, rx_en, pa_boost, tcxo, tcxo_voltage },
+{ "profile_name", LORA_CHIP_SX1262, bus, dev, cs, reset, irq, busy, tx_en, rx_en, pa_boost, tcxo, tcxo_voltage, max_tx_power_dbm },
 ```
 
 | Field | Description |
@@ -219,7 +221,8 @@ To add a new profile:
 | rx_en | BCM GPIO pin for RX enable (-1 if not used) |
 | pa_boost | true for SX1276 PA_BOOST pin, false for RFO |
 | tcxo | true if the module uses a TCXO (most SX1262 modules do) |
-| tcxo_voltage | TCXO voltage in volts (typically 1.8) |
+| tcxo_voltage | TCXO supply voltage in volts (check module datasheet — typically 1.8V for 900 MHz, 2.2V for 400 MHz) |
+| max_tx_power_dbm | Maximum safe LORATXPOWER register input value — Dire Wolf clamps and warns if exceeded. For modules with an external PA (33S variants) this is the SX1262 input level, not the RF output power. |
 
 3. Pin numbers are BCM GPIO numbers. Check your hat's schematic or documentation for the correct assignments.
 4. Rebuild and reinstall Dire Wolf:

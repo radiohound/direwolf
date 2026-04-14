@@ -5,7 +5,7 @@
  * directly to a Raspberry Pi via SPI and GPIO.
  *
  * Hardware is selected by the LORAHW directive in direwolf.conf, which
- * maps to a built-in profile table (mirrors hardware_profiles.yaml).
+ * maps to a built-in profile table in loraspi.c.
  *
  * RF parameters (LORAFREQ, LORASF, LORABW, LORACR, LORASW, LORATXPOWER)
  * are read from the per-channel config populated by config.c.
@@ -152,7 +152,7 @@ static lora_chan_t s_lora[MAX_LORA_CHANS];
 static int         s_lora_count = 0;
 
 /* =========================================================================
- * Hardware profile table  (mirrors hardware_profiles.yaml)
+ * Hardware profile table
  * ========================================================================= */
 typedef struct {
     const char *name;
@@ -168,18 +168,19 @@ typedef struct {
     bool pa_boost;
     bool tcxo;
     float tcxo_voltage;
+    int  max_tx_power_dbm;  /* hardware PA limit — user config is clamped to this */
 } hw_profile_t;
 
 static const hw_profile_t s_profiles[] = {
-    /* name               chip            bus dev  cs  rst  irq busy txen rxen  pa_boost tcxo  tcxo_v */
-    { "meshadv",          LORA_CHIP_SX1262, 0, 0, 21,  18,  16,  20,  13,  12,  false, true,  1.8f },
-    { "e22_900m30s",      LORA_CHIP_SX1262, 0, 0,  8,  25,  24,  23,  -1,  22,  false, true,  1.8f },
-    { "e22_400m30s",      LORA_CHIP_SX1262, 0, 0,  8,  25,  24,  23,  17,  27,  false, true,  1.8f },
-    { "ebyte_e22",        LORA_CHIP_SX1262, 0, 0,  8,  25,  24,  23,  -1,  -1,  false, true,  1.8f },
-    { "lorapi_rfm95w",    LORA_CHIP_SX1276, 0, 1,  7,  22,  -1,  -1,  -1,  -1,  true,  false, 0.0f },
-    { "lorapi_rfm98w",    LORA_CHIP_SX1276, 0, 1,  7,  22,  -1,  -1,  -1,  -1,  true,  false, 0.0f },
-    { "generic_sx1276",   LORA_CHIP_SX1276, 0, 0,  8,  25,  24,  -1,  -1,  -1,  true,  false, 0.0f },
-    { NULL, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, false, 0.0f }
+    /* name               chip            bus dev  cs  rst  irq busy txen rxen  pa_boost tcxo  tcxo_v  max_pwr */
+    { "meshadv_400m30s",  LORA_CHIP_SX1262, 0, 0, 21,  18,  16,  20,  13,  12,  false, true,  2.2f,  22 },
+    { "meshadv_400m33s",  LORA_CHIP_SX1262, 0, 0, 21,  18,  16,  20,  13,  12,  false, true,  2.2f,   8 },
+    { "meshadv_900m30s",  LORA_CHIP_SX1262, 0, 0, 21,  18,  16,  20,  13,  12,  false, true,  1.8f,  22 },
+    { "meshadv_900m33s",  LORA_CHIP_SX1262, 0, 0, 21,  18,  16,  20,  13,  12,  false, true,  1.8f,   8 },
+    { "lorapi_rfm95w",    LORA_CHIP_SX1276, 0, 1,  7,  22,  -1,  -1,  -1,  -1,  true,  false, 0.0f,  17 },
+    { "lorapi_rfm98w",    LORA_CHIP_SX1276, 0, 1,  7,  22,  -1,  -1,  -1,  -1,  true,  false, 0.0f,  17 },
+    { "generic_sx1276",   LORA_CHIP_SX1276, 0, 0,  8,  25,  24,  -1,  -1,  -1,  true,  false, 0.0f,  17 },
+    { NULL, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, false, 0.0f, 0 }
 };
 
 static const hw_profile_t *find_profile (const char *name) {
@@ -1050,6 +1051,13 @@ void loraspi_init (struct audio_s *pa) {
         lc->cr       = pa->lora_cr[chan];
         lc->sw       = pa->lora_sw[chan];
         lc->txpower  = pa->lora_txpower[chan];
+        int max_pwr  = pa->lora_max_txpower[chan];
+        if (max_pwr > 0 && lc->txpower > max_pwr) {
+            text_color_set(DW_COLOR_ERROR);
+            dw_printf ("LoRa channel %d: LORATXPOWER %d dBm exceeds hardware limit of %d dBm — clamping.\n",
+                       chan, lc->txpower, max_pwr);
+            lc->txpower = max_pwr;
+        }
 
         /* Hardware pins */
         lc->pin_cs    = pa->lora_pin_cs[chan];
@@ -1156,6 +1164,7 @@ int loraspi_apply_profile (int chan, const char *name, struct audio_s *pa) {
     pa->lora_pa_boost[chan]     = p->pa_boost ? 1 : 0;
     pa->lora_tcxo[chan]         = p->tcxo     ? 1 : 0;
     pa->lora_tcxo_voltage[chan] = p->tcxo_voltage;
+    pa->lora_max_txpower[chan]  = p->max_tx_power_dbm;
     return 0;
 }
 
