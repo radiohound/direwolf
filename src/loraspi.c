@@ -607,10 +607,15 @@ static void sx1276_start_rx (lora_chan_t *lc) {
 #define SX1262_CMD_CLR_IRQ_STATUS        0x02
 #define SX1262_CMD_SET_IRQ_PARAMS        0x08
 #define SX1262_CMD_GET_IRQ_STATUS        0x12
+#define SX1262_CMD_GET_STATUS            0xC0
 
 #define SX1262_IRQ_RX_DONE  0x0002
 #define SX1262_IRQ_TX_DONE  0x0001
 #define SX1262_IRQ_CRC_ERR  0x0040
+
+/* GetStatus chipMode field (bits [6:4] of the returned status byte) */
+#define SX1262_CHIP_MODE_TX     0x06
+#define SX1262_CHIP_MODE_STDBY  0x02
 
 static void sx1262_wait_busy (lora_chan_t *lc) {
     if (lc->pin_busy < 0) return;
@@ -848,22 +853,54 @@ static bool sx1262_transmit (lora_chan_t *lc, const uint8_t *data, int len) {
     uint8_t tx_rx[4];
     sx1262_cmd(lc, tx_cmd, tx_rx, 4);
 
-    /* Poll TX_DONE via IRQ (timeout 12 s) */
+    /* Poll for TX completion — up to 12 s.
+     * Primary:  GetIrqStatus — TX_DONE flag (bit 0) set when packet sent.
+     * Fallback: GetStatus    — chipMode leaves TX (0x06) once complete.
+     * Both paths are checked because some SX1262 module variants set the
+     * IRQ flag correctly while others appear to not, but both reliably
+     * report the correct chip mode. */
     bool ok = false;
+    uint16_t last_irq = 0;
+    uint8_t  last_mode = 0;
     for (int i = 0; i < 12000; i++) {
         usleep(1000);
+
+        /* --- GetIrqStatus check --- */
         uint8_t gi[4] = { SX1262_CMD_GET_IRQ_STATUS, 0, 0, 0 };
         uint8_t gr[4];
         sx1262_cmd(lc, gi, gr, 4);
         /* gr[0]=status, [1]=echoed status, [2]=IRQ[15:8], [3]=IRQ[7:0] */
-        uint16_t irq = ((uint16_t)gr[2] << 8) | gr[3];
-        if (irq & SX1262_IRQ_TX_DONE) {
+        last_irq = ((uint16_t)gr[2] << 8) | gr[3];
+        if (last_irq & SX1262_IRQ_TX_DONE) {
             uint8_t clr[3] = { SX1262_CMD_CLR_IRQ_STATUS, 0xFF, 0xFF };
             uint8_t clr_rx[3];
             sx1262_cmd(lc, clr, clr_rx, 3);
             ok = true;
             break;
         }
+
+        /* --- GetStatus fallback (after 100 ms) --- */
+        if (i > 100) {
+            uint8_t gs[2] = { SX1262_CMD_GET_STATUS, 0x00 };
+            uint8_t gsr[2];
+            sx1262_cmd(lc, gs, gsr, 2);
+            /* Status byte bits [6:4] = chipMode */
+            last_mode = (gsr[1] >> 4) & 0x07;
+            if (last_mode != SX1262_CHIP_MODE_TX) {
+                /* Chip has left TX mode — transmission complete */
+                uint8_t clr[3] = { SX1262_CMD_CLR_IRQ_STATUS, 0xFF, 0xFF };
+                uint8_t clr_rx[3];
+                sx1262_cmd(lc, clr, clr_rx, 3);
+                ok = true;
+                break;
+            }
+        }
+    }
+
+    if (!ok) {
+        text_color_set(DW_COLOR_ERROR);
+        dw_printf ("loraspi: SX1262 TX timeout: last IRQ=0x%04X chipMode=0x%02X\n",
+                   last_irq, last_mode);
     }
 
     /* Restore RX path */
@@ -1019,8 +1056,6 @@ static void *tx_thread (void *arg) {
 
         pthread_mutex_lock(&lc->spi_lock);
         bool ok = chip_transmit(lc, data, len);
-        /* SX1276/SX1262 drops to STDBY after TX_DONE — re-arm RX immediately */
-        chip_start_rx(lc);
         pthread_mutex_unlock(&lc->spi_lock);
 
         text_color_set(ok ? DW_COLOR_XMIT : DW_COLOR_ERROR);
