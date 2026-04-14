@@ -884,8 +884,9 @@ static bool sx1262_transmit (lora_chan_t *lc, const uint8_t *data, int len) {
             uint8_t gs[2] = { SX1262_CMD_GET_STATUS, 0x00 };
             uint8_t gsr[2];
             sx1262_cmd(lc, gs, gsr, 2);
-            /* Status byte bits [6:4] = chipMode */
-            last_mode = (gsr[1] >> 4) & 0x07;
+            /* Status byte is in gsr[0] (received during the command byte),
+             * bits [6:4] = chipMode: 0x06=TX 0x05=RX 0x02=STDBY_RC */
+            last_mode = (gsr[0] >> 4) & 0x07;
             if (last_mode != SX1262_CHIP_MODE_TX) {
                 /* Chip has left TX mode — transmission complete */
                 uint8_t clr[3] = { SX1262_CMD_CLR_IRQ_STATUS, 0xFF, 0xFF };
