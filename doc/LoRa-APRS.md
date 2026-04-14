@@ -25,6 +25,8 @@ Dire Wolf talks directly to the LoRa chip over SPI. No Python packages or separa
 
 ## Installation
 
+### Fresh install
+
 1. Update your system and reboot:
 
 ```bash
@@ -32,12 +34,11 @@ sudo apt update && sudo apt upgrade -y
 sudo reboot
 ```
 
-2. Clone the repository and check out the branch:
+2. Clone the repository:
 
 ```bash
 git clone https://github.com/radiohound/direwolf.git
 cd direwolf
-git checkout feature/lora-spi-v2
 ```
 
 3. Run the install script:
@@ -46,17 +47,23 @@ git checkout feature/lora-spi-v2
 sudo bash install-lora.sh
 ```
 
-The script installs dependencies, builds Dire Wolf, and creates a starter direwolf.conf at /etc/direwolf/direwolf.conf.
+The script installs dependencies, builds Dire Wolf, enables SPI, and creates a starter config at `/etc/direwolf/direwolf.conf`. It will prompt you for your callsign, passcode, location, hardware profile, and frequency.
 
-4. Enable SPI and I2C, then reboot:
+SPI is enabled automatically. If a reboot is required the script will say so — reboot before using the LoRa hat.
+
+---
+
+### Upgrade (preserves existing config)
+
+If you already have Dire Wolf installed and just want to update the binary:
 
 ```bash
-sudo raspi-config nonint do_spi 0
-sudo raspi-config nonint do_i2c 0
-sudo reboot
+cd direwolf
+git pull
+sudo bash install-lora.sh --upgrade
 ```
 
-Verify SPI with: ls /dev/spidev* -- you should see /dev/spidev0.0 and /dev/spidev0.1.
+The `--upgrade` flag skips the config prompts and does not overwrite `/etc/direwolf/direwolf.conf`. It rebuilds and reinstalls the binary, then restarts the Dire Wolf service automatically.
 
 ---
 

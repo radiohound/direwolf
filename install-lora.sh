@@ -19,10 +19,15 @@
 #   9. Installs and enables systemd services
 #
 # Usage:
-#   git clone https://github.com/radiohound/direwolf.git
-#   cd direwolf
-#   git checkout feature/lora-spi
-#   sudo bash install-lora.sh
+#   Fresh install:
+#     git clone https://github.com/radiohound/direwolf.git
+#     cd direwolf
+#     sudo bash install-lora.sh
+#
+#   Upgrade (preserves existing config files):
+#     cd direwolf
+#     git pull
+#     sudo bash install-lora.sh --upgrade
 
 set -euo pipefail
 trap 'echo "[ERROR] Script failed at line $LINENO" >&2' ERR
@@ -109,12 +114,13 @@ prompt_config() {
 
     echo "" > /dev/tty
     echo "Hardware profiles:" > /dev/tty
-    echo "  meshadv        MeshAdv-Pi Hat (SX1262, 900 MHz)" > /dev/tty
-    echo "  lorapi_rfm95w  LoRa-Pi RFM95W (SX1276, 868/915 MHz)" > /dev/tty
-    echo "  lorapi_rfm98w  LoRa-Pi RFM98W (SX1278, 433 MHz)" > /dev/tty
-    echo "  generic_sx1276 Generic SX1276/SX1278 breakout" > /dev/tty
-    echo "  e22_900m30s    Ebyte E22-900M30S (SX1262, 900 MHz)" > /dev/tty
-    echo "  e22_400m30s    Ebyte E22-400M30S (SX1268, 433 MHz)" > /dev/tty
+    echo "  meshadv_900m30s  MeshAdv-Pi Hat with E22-900M30S (SX1262, 868/915 MHz, 1W)" > /dev/tty
+    echo "  meshadv_900m33s  MeshAdv-Pi Hat with E22-900M33S (SX1262, 868/915 MHz, 2W)" > /dev/tty
+    echo "  meshadv_400m30s  MeshAdv-Pi Hat with E22-400M30S (SX1262, 433/470 MHz, 1W)" > /dev/tty
+    echo "  meshadv_400m33s  MeshAdv-Pi Hat with E22-400M33S (SX1262, 433/470 MHz, 2W)" > /dev/tty
+    echo "  lorapi_rfm95w    LoRa-Pi RFM95W (SX1276, 868/915 MHz)" > /dev/tty
+    echo "  lorapi_rfm98w    LoRa-Pi RFM98W (SX1278, 433 MHz)" > /dev/tty
+    echo "  generic_sx1276   Generic SX1276/SX1278 breakout" > /dev/tty
     echo "" > /dev/tty
     HW_PROFILE=""
     while [ -z "$HW_PROFILE" ]; do
@@ -426,19 +432,34 @@ EOF
 # ---------------------------------------------------------------------------
 
 REBOOT_REQUIRED=0
+UPGRADE_MODE=0
 
 main() {
+    # Parse arguments
+    for arg in "$@"; do
+        case "$arg" in
+            --upgrade) UPGRADE_MODE=1 ;;
+            *) error "Unknown argument: $arg" ;;
+        esac
+    done
+
     require_root
     detect_pi_model
 
     echo ""
     echo "======================================================"
-    echo " Dire Wolf LoRa APRS installer"
+    if [ "$UPGRADE_MODE" -eq 1 ]; then
+        echo " Dire Wolf LoRa APRS upgrade"
+    else
+        echo " Dire Wolf LoRa APRS installer"
+    fi
     echo " Target: Raspberry Pi $PI_MODEL"
     echo "======================================================"
     echo ""
 
-    prompt_config
+    if [ "$UPGRADE_MODE" -eq 0 ]; then
+        prompt_config
+    fi
     install_deps
     enable_spi
     if [ "$PI_MODEL" -ge 4 ]; then
@@ -447,12 +468,22 @@ main() {
     fi
     install_direwolf
     install_scripts
-    write_configs
-    install_services
+    if [ "$UPGRADE_MODE" -eq 0 ]; then
+        write_configs
+        install_services
+    else
+        info "Upgrade mode — skipping config and service changes."
+        info "Restarting Dire Wolf to pick up new binary..."
+        systemctl restart direwolf || true
+    fi
 
     echo ""
     echo "======================================================"
-    info "Installation complete."
+    if [ "$UPGRADE_MODE" -eq 1 ]; then
+        info "Upgrade complete."
+    else
+        info "Installation complete."
+    fi
     echo ""
     echo "  Monitor Dire Wolf:      journalctl -u direwolf -f"
     if [ "$PI_MODEL" -ge 4 ]; then
