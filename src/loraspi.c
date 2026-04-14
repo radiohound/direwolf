@@ -669,10 +669,14 @@ static bool sx1262_init (lora_chan_t *lc) {
         usleep(10000);
     }
 
-    /* DIO2 as RF switch (handles TXEN/RXEN internally on most modules) */
-    uint8_t dio2_cmd[2] = { SX1262_CMD_SET_DIO2_RF_SWITCH, 0x01 };
-    uint8_t dio2_rx[2];
-    sx1262_cmd(lc, dio2_cmd, dio2_rx, 2);
+    /* DIO2 as RF switch — only when the hat has no external TX/RX enable GPIO pins.
+     * If tx_en/rx_en are wired (e.g. MeshAdv), the GPIO driver controls the PA switch
+     * directly and enabling DIO2 RF switch simultaneously causes a conflict. */
+    if (lc->pin_tx_en < 0 && lc->pin_rx_en < 0) {
+        uint8_t dio2_cmd[2] = { SX1262_CMD_SET_DIO2_RF_SWITCH, 0x01 };
+        uint8_t dio2_rx[2];
+        sx1262_cmd(lc, dio2_cmd, dio2_rx, 2);
+    }
 
     /* Image calibration for the frequency band */
     uint8_t cal_cmd[3] = { SX1262_CMD_CALIBRATE_IMAGE, 0, 0 };
