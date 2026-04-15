@@ -301,7 +301,8 @@ static void gpio_setup_out (int pin, int initial)
     s_gpio_req[pin] = gpio_open_line((unsigned int)pin, true, initial);
     if (!s_gpio_req[pin]) {
         text_color_set(DW_COLOR_ERROR);
-        dw_printf ("loraspi: GPIO setup failed for output pin %d\n", pin);
+        dw_printf ("loraspi: GPIO setup failed for output pin %d: %s\n",
+                   pin, strerror(errno));
     }
 }
 
@@ -311,7 +312,8 @@ static void gpio_setup_in (int pin)
     s_gpio_req[pin] = gpio_open_line((unsigned int)pin, false, 0);
     if (!s_gpio_req[pin]) {
         text_color_set(DW_COLOR_ERROR);
-        dw_printf ("loraspi: GPIO setup failed for input pin %d\n", pin);
+        dw_printf ("loraspi: GPIO setup failed for input pin %d: %s\n",
+                   pin, strerror(errno));
     }
 }
 
@@ -363,7 +365,8 @@ static void gpio_setup_out (int pin, int initial)
     s_gpio_line[pin] = gpio_open_line((unsigned int)pin, true, initial);
     if (!s_gpio_line[pin]) {
         text_color_set(DW_COLOR_ERROR);
-        dw_printf ("loraspi: GPIO setup failed for output pin %d\n", pin);
+        dw_printf ("loraspi: GPIO setup failed for output pin %d: %s\n",
+                   pin, strerror(errno));
     }
 }
 
@@ -373,7 +376,8 @@ static void gpio_setup_in (int pin)
     s_gpio_line[pin] = gpio_open_line((unsigned int)pin, false, 0);
     if (!s_gpio_line[pin]) {
         text_color_set(DW_COLOR_ERROR);
-        dw_printf ("loraspi: GPIO setup failed for input pin %d\n", pin);
+        dw_printf ("loraspi: GPIO setup failed for input pin %d: %s\n",
+                   pin, strerror(errno));
     }
 }
 
@@ -847,9 +851,9 @@ static void sx1262_write_reg (lora_chan_t *lc, uint16_t addr, uint8_t val) {
 static void sx1262_reset (lora_chan_t *lc) {
     if (lc->pin_reset < 0) return;
     gpio_write(lc->pin_reset, 0);
-    usleep(200);
+    usleep(5000);   /* 5 ms low — was 200 µs; longer pulse ensures full reset */
     gpio_write(lc->pin_reset, 1);
-    usleep(10000);
+    usleep(100000); /* 100 ms — was 10 ms; allows BUSY to settle after reset */
 }
 
 static bool sx1262_init (lora_chan_t *lc) {
@@ -1005,6 +1009,14 @@ static int sx1262_receive (lora_chan_t *lc, uint8_t *buf, int maxlen,
     int nb     = buf_rx[2];
     int offset = buf_rx[3];
     if (nb <= 0 || nb > maxlen) return -1;
+    /* RX base is 0x80; a packet longer than 128 bytes would wrap the circular
+     * buffer into the TX region (0x00), concatenating TX data into the read.
+     * Discard — LoRa APRS packets are always well under 128 bytes. */
+    if (nb > 128) {
+        text_color_set(DW_COLOR_ERROR);
+        dw_printf ("loraspi: RX packet too large (%d bytes) — discarding\n", nb);
+        return -1;
+    }
 
     /* Read buffer (fixed max 256 bytes payload) */
     uint8_t rd_cmd[256 + 3];

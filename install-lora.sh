@@ -475,7 +475,14 @@ main() {
     else
         info "Upgrade mode — skipping config and service changes."
         info "Restarting Dire Wolf to pick up new binary..."
-        systemctl restart direwolf || true
+        # Restart whichever direwolf service is active on this system
+        for svc in direwolf direwolf-chase; do
+            if systemctl is-active --quiet "$svc"; then
+                info "Restarting $svc..."
+                systemctl restart "$svc" || true
+                break
+            fi
+        done
     fi
 
     echo ""
