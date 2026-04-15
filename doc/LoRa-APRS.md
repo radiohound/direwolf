@@ -48,7 +48,7 @@ cd direwolf
 sudo bash install-lora.sh
 ```
 
-The script installs dependencies (including `libgpiod-dev`), builds Dire Wolf, enables SPI, and creates a starter config at `/etc/direwolf/direwolf.conf`. It will prompt you for your callsign, passcode, location, hardware profile, and frequency.
+The script installs dependencies (including `libgpiod-dev`), builds Dire Wolf, enables SPI, and creates a starter config at `~/direwolf.conf`. It will prompt you for your callsign, passcode, location, hardware profile, and frequency.
 
 SPI is enabled automatically. If a reboot is required the script will say so — reboot before using the LoRa hat.
 
@@ -72,7 +72,7 @@ git pull
 sudo bash install-lora.sh --upgrade
 ```
 
-The `--upgrade` flag skips the config prompts and does not overwrite `/etc/direwolf/direwolf.conf`. It rebuilds and reinstalls the binary, then restarts the Dire Wolf service automatically. The script detects whichever service name is running (`direwolf` or a custom name like `direwolf-chase`) and restarts the correct one.
+The `--upgrade` flag skips the config prompts and does not overwrite `~/direwolf.conf`. It rebuilds and reinstalls the binary, then restarts the Dire Wolf service automatically. The script detects whichever service name is running (`direwolf` or a custom name like `direwolf-chase`) and restarts the correct one.
 
 ---
 
@@ -81,8 +81,12 @@ The `--upgrade` flag skips the config prompts and does not overwrite `/etc/direw
 The LCHANNEL block must appear **before** any PBEACON lines that reference that channel number.
 
 ```
-# No physical audio device (LoRa-only setup)
-ADEVICE null null
+# VHF APRS via RTL-SDR (piped from rtl_fm on stdin)
+# On Pi 3 (no RTL-SDR) use: ADEVICE null null
+ADEVICE stdin stdout
+CHANNEL 0
+MYCALL W1ABC-10
+MODEM 1200
 
 # LoRa SPI hat -- native driver
 # Must appear before any PBEACON lines referencing channel 10
@@ -115,8 +119,18 @@ Generate your APRS passcode at https://apps.magicbug.co.uk/passcode if needed.
 
 ## Starting Dire Wolf
 
+On Pi 4/5 (with RTL-SDR for VHF APRS):
+
 ```bash
-direwolf -c /etc/direwolf/direwolf.conf
+sudo systemctl stop direwolf
+rtl_fm -f 144.390M -M fm -s 22050 -g 40 - | direwolf -c ~/direwolf.conf -r 22050 -
+```
+
+On Pi 3 (LoRa only):
+
+```bash
+sudo systemctl stop direwolf
+direwolf -c ~/direwolf.conf
 ```
 
 On a successful start you will see:
