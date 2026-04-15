@@ -855,11 +855,13 @@ static bool sx1262_transmit (lora_chan_t *lc, const uint8_t *data, int len) {
 
     /* Poll for TX completion — up to 12 s.
      * Primary:  GetIrqStatus — TX_DONE flag (bit 0) set when packet sent.
-     * Fallback: GetStatus    — chipMode leaves TX (0x06) once complete.
-     * Both paths are checked because some SX1262 module variants set the
-     * IRQ flag correctly while others appear to not, but both reliably
-     * report the correct chip mode. */
+     * Fallback: GetStatus    — watch chipMode transition TX(0x06)→STDBY(0x02).
+     *
+     * seen_tx_mode guards against a false positive: if SetTx never moved the
+     * chip into TX mode (e.g. an error), chipMode would already be 0x02 at
+     * i=101 and we must NOT declare success prematurely. */
     bool ok = false;
+    bool seen_tx_mode = false;
     uint16_t last_irq = 0;
     uint8_t  last_mode = 0;
     for (int i = 0; i < 12000; i++) {
@@ -879,16 +881,26 @@ static bool sx1262_transmit (lora_chan_t *lc, const uint8_t *data, int len) {
             break;
         }
 
-        /* --- GetStatus fallback (after 100 ms) --- */
+        /* --- GetStatus fallback (start checking after 100 ms) --- */
         if (i > 100) {
             uint8_t gs[2] = { SX1262_CMD_GET_STATUS, 0x00 };
             uint8_t gsr[2];
             sx1262_cmd(lc, gs, gsr, 2);
-            /* Status byte is in gsr[0] (received during the command byte),
-             * bits [6:4] = chipMode: 0x06=TX 0x05=RX 0x02=STDBY_RC */
+            /* Status byte in gsr[0] (received during command byte).
+             * Bits [6:4] = chipMode: 0x06=TX  0x05=RX  0x02=STDBY_RC */
             last_mode = (gsr[0] >> 4) & 0x07;
-            if (last_mode != SX1262_CHIP_MODE_TX) {
-                /* Chip has left TX mode — transmission complete */
+
+            /* One-time diagnostic on first GetStatus read */
+            if (i == 101) {
+                text_color_set(DW_COLOR_INFO);
+                dw_printf ("loraspi: TX poll: chipMode=0x%02X irq=0x%04X\n",
+                           last_mode, last_irq);
+            }
+
+            if (last_mode == SX1262_CHIP_MODE_TX) {
+                seen_tx_mode = true;
+            } else if (seen_tx_mode) {
+                /* Was TX, now left TX mode — packet sent, chip back in STDBY */
                 uint8_t clr[3] = { SX1262_CMD_CLR_IRQ_STATUS, 0xFF, 0xFF };
                 uint8_t clr_rx[3];
                 sx1262_cmd(lc, clr, clr_rx, 3);
@@ -900,8 +912,8 @@ static bool sx1262_transmit (lora_chan_t *lc, const uint8_t *data, int len) {
 
     if (!ok) {
         text_color_set(DW_COLOR_ERROR);
-        dw_printf ("loraspi: SX1262 TX timeout: last IRQ=0x%04X chipMode=0x%02X\n",
-                   last_irq, last_mode);
+        dw_printf ("loraspi: SX1262 TX timeout: seen_tx=%d last_irq=0x%04X chipMode=0x%02X\n",
+                   seen_tx_mode, last_irq, last_mode);
     }
 
     /* Restore RX path */
