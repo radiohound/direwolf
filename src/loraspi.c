@@ -237,6 +237,7 @@ static void gpio_find_chip (void)
 #endif
         if (nlines >= 28) {
             strncpy(s_chip_path, path, sizeof(s_chip_path) - 1);
+            s_chip_path[sizeof(s_chip_path) - 1] = '\0';
             break;
         }
     }
