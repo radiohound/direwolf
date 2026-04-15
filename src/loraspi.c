@@ -299,12 +299,20 @@ static void gpio_setup_out (int pin, int initial)
 {
     if (pin < 0 || pin >= GPIOD_MAX_PINS) return;
     s_gpio_req[pin] = gpio_open_line((unsigned int)pin, true, initial);
+    if (!s_gpio_req[pin]) {
+        text_color_set(DW_COLOR_ERROR);
+        dw_printf ("loraspi: GPIO setup failed for output pin %d\n", pin);
+    }
 }
 
 static void gpio_setup_in (int pin)
 {
     if (pin < 0 || pin >= GPIOD_MAX_PINS) return;
     s_gpio_req[pin] = gpio_open_line((unsigned int)pin, false, 0);
+    if (!s_gpio_req[pin]) {
+        text_color_set(DW_COLOR_ERROR);
+        dw_printf ("loraspi: GPIO setup failed for input pin %d\n", pin);
+    }
 }
 
 static void gpio_write (int pin, int val)
@@ -353,12 +361,20 @@ static void gpio_setup_out (int pin, int initial)
 {
     if (pin < 0 || pin >= GPIOD_MAX_PINS) return;
     s_gpio_line[pin] = gpio_open_line((unsigned int)pin, true, initial);
+    if (!s_gpio_line[pin]) {
+        text_color_set(DW_COLOR_ERROR);
+        dw_printf ("loraspi: GPIO setup failed for output pin %d\n", pin);
+    }
 }
 
 static void gpio_setup_in (int pin)
 {
     if (pin < 0 || pin >= GPIOD_MAX_PINS) return;
     s_gpio_line[pin] = gpio_open_line((unsigned int)pin, false, 0);
+    if (!s_gpio_line[pin]) {
+        text_color_set(DW_COLOR_ERROR);
+        dw_printf ("loraspi: GPIO setup failed for input pin %d\n", pin);
+    }
 }
 
 static void gpio_write (int pin, int val)
@@ -1212,6 +1228,9 @@ static void *rx_thread (void *arg) {
             /* Strip trailing whitespace */
             for (int i = plen - 1; i >= 0 && (tnc2[i] == '\r' || tnc2[i] == '\n' || tnc2[i] == ' '); i--)
                 tnc2[i] = '\0';
+
+            /* Drop silently if nothing remains after stripping */
+            if (tnc2[0] == '\0') goto next;
 
             /* Parse TNC2 into AX.25 packet object */
             packet_t pp = ax25_from_text(tnc2, 1);
