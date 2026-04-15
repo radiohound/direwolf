@@ -83,7 +83,7 @@ The LCHANNEL block must appear **before** any PBEACON lines that reference that 
 ```
 # VHF APRS via RTL-SDR (piped from rtl_fm on stdin)
 # On Pi 3 (no RTL-SDR) use: ADEVICE null null
-ADEVICE stdin stdout
+ADEVICE stdin null
 CHANNEL 0
 MYCALL W1ABC-10
 MODEM 1200
