@@ -38,7 +38,7 @@ sudo reboot
 2. Clone the repository:
 
 ```bash
-git clone https://github.com/radiohound/direwolf.git
+git clone -b feature/lora-spi https://github.com/radiohound/direwolf.git
 cd direwolf
 ```
 
