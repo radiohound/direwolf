@@ -161,6 +161,7 @@ install_deps() {
         libsndfile1-dev libasound2-dev \
         libgps-dev gpsd \
         libhamlib-dev \
+        libgpiod-dev \
         python3-pip
 
     info "Installing Python packages..."
