@@ -7,7 +7,7 @@ This document describes how to use Dire Wolf as an iGate, digipeater, and decode
 ```
 LoRa hat (SX1276 / SX1262 wired to SPI bus)
 |
-| Linux spidev + sysfs GPIO
+| Linux spidev + libgpiod
 v
 Dire Wolf (loraspi.c) <- direwolf.conf (LCHANNEL, LORAHW, LORAFREQ ...)
 |
