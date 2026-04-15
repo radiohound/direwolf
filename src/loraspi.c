@@ -44,7 +44,6 @@
 #include <pthread.h>
 #include <sys/ioctl.h>
 #include <linux/spi/spidev.h>
-#include <dirent.h>
 
 #include <math.h>
 #include "textcolor.h"
@@ -191,20 +190,203 @@ static const hw_profile_t *find_profile (const char *name) {
 }
 
 /* =========================================================================
- * GPIO via sysfs  (/sys/class/gpio/)
+ * GPIO
  *
- * On Raspberry Pi 3/4 the GPIO chip is registered at sysfs base 0, so
- * BCM pin N appears as /sys/class/gpio/gpioN.
- * On Raspberry Pi 5 the RP1 chip registers at a non-zero base (typically
- * 512), so BCM pin N appears as /sys/class/gpio/gpio(512+N).
- * gpio_sysfs_num() maps a BCM pin number to the correct sysfs number.
+ * Preferred: libgpiod (USE_GPIOD defined by CMake when libgpiod is present).
+ *   Works on Pi Zero 2 W, Pi 3, Pi 4, and Pi 5 with no offset calculation.
+ *   libgpiod v1 API: Debian Bullseye / Bookworm (libgpiod 1.x).
+ *   libgpiod v2 API: Debian Trixie and later (libgpiod 2.x).
+ *
+ * Fallback: Linux sysfs (/sys/class/gpio/).
+ *   Deprecated since kernel 4.8.  Not available on Raspberry Pi 5.
+ *   Used only when libgpiod is not present at build time.
  * ========================================================================= */
-static int s_gpio_base = -1;   /* -1 = not yet detected */
 
-static int gpio_sysfs_num (int bcm_pin) {
+#if USE_GPIOD    /* ---- libgpiod ---- */
+
+#include <gpiod.h>
+
+#define GPIOD_MAX_PINS  64
+#define GPIOD_CONSUMER  "direwolf"
+
+static char s_chip_path[32];   /* e.g. "/dev/gpiochip0" — found once */
+
+/* Scan /dev/gpiochip0..7 and cache the path of the first chip with
+ * >= 28 lines, which is the main GPIO header on all Pi models. */
+static void gpio_find_chip (void)
+{
+    if (s_chip_path[0]) return;
+    for (int n = 0; n < 8; n++) {
+        char path[32];
+        snprintf(path, sizeof(path), "/dev/gpiochip%d", n);
+        unsigned int nlines = 0;
+#if LIBGPIOD_VERSION_MAJOR >= 2
+        struct gpiod_chip *c = gpiod_chip_open(path);
+        if (!c) continue;
+        struct gpiod_chip_info *info = gpiod_chip_get_info(c);
+        if (info) {
+            nlines = (unsigned int)gpiod_chip_info_get_num_lines(info);
+            gpiod_chip_info_free(info);
+        }
+        gpiod_chip_close(c);
+#else
+        struct gpiod_chip *c = gpiod_chip_open(path);
+        if (!c) continue;
+        nlines = gpiod_chip_num_lines(c);
+        gpiod_chip_close(c);
+#endif
+        if (nlines >= 28) {
+            strncpy(s_chip_path, path, sizeof(s_chip_path) - 1);
+            break;
+        }
+    }
+    text_color_set(s_chip_path[0] ? DW_COLOR_INFO : DW_COLOR_ERROR);
+    if (s_chip_path[0])
+        dw_printf ("loraspi: GPIO chip: %s (libgpiod %d.%d)\n",
+                   s_chip_path, LIBGPIOD_VERSION_MAJOR, LIBGPIOD_VERSION_MINOR);
+    else
+        dw_printf ("loraspi: no GPIO chip with >= 28 lines found in /dev/gpiochip0..7\n");
+}
+
+/* ---- libgpiod v2 (Debian Trixie / libgpiod >= 2.0) ---- */
+#if LIBGPIOD_VERSION_MAJOR >= 2
+
+static struct gpiod_line_request *s_gpio_req[GPIOD_MAX_PINS];
+
+static struct gpiod_line_request *gpio_open_line (unsigned int offset,
+                                                   bool output, int initial)
+{
+    gpio_find_chip();
+    if (!s_chip_path[0]) return NULL;
+
+    struct gpiod_chip *chip = gpiod_chip_open(s_chip_path);
+    if (!chip) return NULL;
+
+    struct gpiod_line_settings *settings = gpiod_line_settings_new();
+    if (!settings) { gpiod_chip_close(chip); return NULL; }
+
+    if (output) {
+        gpiod_line_settings_set_direction(settings, GPIOD_LINE_DIRECTION_OUTPUT);
+        gpiod_line_settings_set_output_value(settings,
+            initial ? GPIOD_LINE_VALUE_ACTIVE : GPIOD_LINE_VALUE_INACTIVE);
+    } else {
+        gpiod_line_settings_set_direction(settings, GPIOD_LINE_DIRECTION_INPUT);
+    }
+
+    struct gpiod_line_config *line_cfg = gpiod_line_config_new();
+    if (!line_cfg) {
+        gpiod_line_settings_free(settings);
+        gpiod_chip_close(chip);
+        return NULL;
+    }
+    gpiod_line_config_add_line_settings(line_cfg, &offset, 1, settings);
+
+    struct gpiod_request_config *req_cfg = gpiod_request_config_new();
+    if (req_cfg) gpiod_request_config_set_consumer(req_cfg, GPIOD_CONSUMER);
+
+    struct gpiod_line_request *req =
+        gpiod_chip_request_lines(chip, req_cfg, line_cfg);
+
+    if (req_cfg)  gpiod_request_config_free(req_cfg);
+    gpiod_line_config_free(line_cfg);
+    gpiod_line_settings_free(settings);
+    gpiod_chip_close(chip);   /* v2: chip can be closed after request */
+
+    return req;
+}
+
+static void gpio_setup_out (int pin, int initial)
+{
+    if (pin < 0 || pin >= GPIOD_MAX_PINS) return;
+    s_gpio_req[pin] = gpio_open_line((unsigned int)pin, true, initial);
+}
+
+static void gpio_setup_in (int pin)
+{
+    if (pin < 0 || pin >= GPIOD_MAX_PINS) return;
+    s_gpio_req[pin] = gpio_open_line((unsigned int)pin, false, 0);
+}
+
+static void gpio_write (int pin, int val)
+{
+    if (pin < 0 || pin >= GPIOD_MAX_PINS || !s_gpio_req[pin]) return;
+    enum gpiod_line_value v =
+        val ? GPIOD_LINE_VALUE_ACTIVE : GPIOD_LINE_VALUE_INACTIVE;
+    gpiod_line_request_set_value(s_gpio_req[pin], (unsigned int)pin, v);
+}
+
+static int gpio_read (int pin)
+{
+    if (pin < 0 || pin >= GPIOD_MAX_PINS || !s_gpio_req[pin]) return 0;
+    return gpiod_line_request_get_value(s_gpio_req[pin], (unsigned int)pin)
+               == GPIOD_LINE_VALUE_ACTIVE ? 1 : 0;
+}
+
+/* ---- libgpiod v1 (Debian Bullseye / Bookworm / libgpiod 1.x) ---- */
+#else
+
+static struct gpiod_chip *s_gpiod_chip;    /* kept open; v1 lines reference it */
+static struct gpiod_line *s_gpio_line[GPIOD_MAX_PINS];
+
+static struct gpiod_line *gpio_open_line (unsigned int offset,
+                                           bool output, int initial)
+{
+    gpio_find_chip();
+    if (!s_chip_path[0]) return NULL;
+
+    if (!s_gpiod_chip) {
+        s_gpiod_chip = gpiod_chip_open(s_chip_path);
+        if (!s_gpiod_chip) return NULL;
+    }
+
+    struct gpiod_line *line = gpiod_chip_get_line(s_gpiod_chip, offset);
+    if (!line) return NULL;
+
+    int ret = output
+        ? gpiod_line_request_output(line, GPIOD_CONSUMER, initial)
+        : gpiod_line_request_input (line, GPIOD_CONSUMER);
+
+    return (ret == 0) ? line : NULL;
+}
+
+static void gpio_setup_out (int pin, int initial)
+{
+    if (pin < 0 || pin >= GPIOD_MAX_PINS) return;
+    s_gpio_line[pin] = gpio_open_line((unsigned int)pin, true, initial);
+}
+
+static void gpio_setup_in (int pin)
+{
+    if (pin < 0 || pin >= GPIOD_MAX_PINS) return;
+    s_gpio_line[pin] = gpio_open_line((unsigned int)pin, false, 0);
+}
+
+static void gpio_write (int pin, int val)
+{
+    if (pin < 0 || pin >= GPIOD_MAX_PINS || !s_gpio_line[pin]) return;
+    gpiod_line_set_value(s_gpio_line[pin], val);
+}
+
+static int gpio_read (int pin)
+{
+    if (pin < 0 || pin >= GPIOD_MAX_PINS || !s_gpio_line[pin]) return 0;
+    return gpiod_line_get_value(s_gpio_line[pin]);
+}
+
+#endif  /* LIBGPIOD_VERSION_MAJOR >= 2 */
+
+#else   /* USE_GPIOD not defined — sysfs fallback (deprecated) */
+
+/* sysfs GPIO is deprecated since kernel 4.8 and not available on Pi 5.
+ * This path is kept only for build environments without libgpiod.
+ * Install libgpiod-dev to use the modern interface. */
+#include <dirent.h>
+
+static int s_gpio_base = -1;
+
+static int gpio_sysfs_num (int bcm_pin)
+{
     if (s_gpio_base < 0) {
-        /* Scan /sys/class/gpio/ for gpiochipN; pick the chip with the
-         * smallest base that has ngpio >= 28 (covers the Pi header GPIO). */
         int best = 0;
         bool found = false;
         DIR *d = opendir("/sys/class/gpio");
@@ -217,15 +399,13 @@ static int gpio_sysfs_num (int bcm_pin) {
                 int fd = open(p, O_RDONLY);
                 if (fd < 0) continue;
                 char buf[16]; int n = read(fd, buf, sizeof(buf)-1); close(fd);
-                if (n <= 0) continue;
-                buf[n] = '\0';
+                if (n <= 0) continue; buf[n] = '\0';
                 int base = atoi(buf);
                 snprintf(p, sizeof(p), "/sys/class/gpio/%s/ngpio", de->d_name);
                 fd = open(p, O_RDONLY);
                 if (fd < 0) continue;
                 n = read(fd, buf, sizeof(buf)-1); close(fd);
-                if (n <= 0) continue;
-                buf[n] = '\0';
+                if (n <= 0) continue; buf[n] = '\0';
                 int ngpio = atoi(buf);
                 if (ngpio >= 28 && (!found || base < best)) {
                     best = base; found = true;
@@ -235,26 +415,29 @@ static int gpio_sysfs_num (int bcm_pin) {
         }
         s_gpio_base = found ? best : 0;
         text_color_set(DW_COLOR_INFO);
-        dw_printf ("loraspi: GPIO chip base offset = %d\n", s_gpio_base);
+        dw_printf ("loraspi: GPIO sysfs base offset = %d (consider installing libgpiod-dev)\n",
+                   s_gpio_base);
     }
     return s_gpio_base + bcm_pin;
 }
 
-static void gpio_export (int bcm_pin) {
+static void gpio_export (int bcm_pin)
+{
     int sysfs_pin = gpio_sysfs_num(bcm_pin);
     char path[64];
     snprintf(path, sizeof(path), "/sys/class/gpio/gpio%d", sysfs_pin);
-    if (access(path, F_OK) == 0) return;   /* already exported */
+    if (access(path, F_OK) == 0) return;
     int fd = open("/sys/class/gpio/export", O_WRONLY);
     if (fd < 0) return;
     char buf[16];
     snprintf(buf, sizeof(buf), "%d", sysfs_pin);
     (void)write(fd, buf, strlen(buf));
     close(fd);
-    usleep(50000);  /* wait for udev to set permissions */
+    usleep(50000);
 }
 
-static void gpio_direction (int bcm_pin, const char *dir) {
+static void gpio_direction (int bcm_pin, const char *dir)
+{
     int sysfs_pin = gpio_sysfs_num(bcm_pin);
     char path[80];
     snprintf(path, sizeof(path), "/sys/class/gpio/gpio%d/direction", sysfs_pin);
@@ -264,7 +447,8 @@ static void gpio_direction (int bcm_pin, const char *dir) {
     close(fd);
 }
 
-static void gpio_write (int bcm_pin, int val) {
+static void gpio_write (int bcm_pin, int val)
+{
     int sysfs_pin = gpio_sysfs_num(bcm_pin);
     char path[80];
     snprintf(path, sizeof(path), "/sys/class/gpio/gpio%d/value", sysfs_pin);
@@ -274,7 +458,8 @@ static void gpio_write (int bcm_pin, int val) {
     close(fd);
 }
 
-static int gpio_read (int bcm_pin) {
+static int gpio_read (int bcm_pin)
+{
     int sysfs_pin = gpio_sysfs_num(bcm_pin);
     char path[80];
     snprintf(path, sizeof(path), "/sys/class/gpio/gpio%d/value", sysfs_pin);
@@ -286,18 +471,22 @@ static int gpio_read (int bcm_pin) {
     return c == '1';
 }
 
-static void gpio_setup_out (int pin, int initial) {
+static void gpio_setup_out (int pin, int initial)
+{
     if (pin < 0) return;
     gpio_export(pin);
     gpio_direction(pin, "out");
     gpio_write(pin, initial);
 }
 
-static void gpio_setup_in (int pin) {
+static void gpio_setup_in (int pin)
+{
     if (pin < 0) return;
     gpio_export(pin);
     gpio_direction(pin, "in");
 }
+
+#endif  /* USE_GPIOD */
 
 /* =========================================================================
  * SPI via spidev
