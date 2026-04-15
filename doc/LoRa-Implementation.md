@@ -25,7 +25,7 @@ Two paths are available for receiving and transmitting LoRa APRS frames:
 │     LCHANNEL                  NCHANNEL               │
 │  (native SPI driver)     (external KISS TNC)         │
 └──────┬──────────────────────────────┬────────────────┘
-       │  Linux spidev + sysfs GPIO   │  KISS TCP
+       │  Linux spidev + libgpiod     │  KISS TCP
 ┌──────┴──────────────┐      ┌────────┴────────────────┐
 │                     │      │                          │
 │  SX1276 / SX1262   │      │  lora_sdr_bridge.py      │
@@ -86,6 +86,11 @@ support. All changes are additive — no existing behaviour was altered.
 
 ### `src/CMakeLists.txt`
 - Added `loraspi.c` to the `direwolf` executable source list.
+
+### `install-lora.sh`
+- Added `libgpiod-dev` to the apt dependency list.
+- `--upgrade` mode now detects which direwolf service is active (`direwolf` or a
+  custom name) and restarts the correct one, rather than hardcoding `direwolf`.
 
 ---
 
@@ -283,12 +288,28 @@ build and can be contributed separately or maintained in this fork.
 Key design decisions that upstream reviewers may ask about:
 
 - **Native SPI driver (`LCHANNEL`)** — `loraspi.c` opens `/dev/spidevX.Y` directly via
-  `ioctl` and controls reset/IRQ pins via sysfs GPIO. No external Python library is
-  required. Two threads per channel: rx_thread polls the chip at 100 Hz and injects
-  received frames via `dlq_rec_frame()`; tx_thread pulls from a semaphore-triggered
+  `ioctl` and controls reset/IRQ/TX_EN/RX_EN pins via libgpiod. No external Python
+  library is required. Two threads per channel: rx_thread polls the chip at 100 Hz and
+  injects received frames via `dlq_rec_frame()`; tx_thread pulls from a semaphore-triggered
   queue and calls `chip_transmit()`. A per-channel `pthread_mutex_t` serialises all
   SPI bus access between the two threads. After TX completes the chip drops to STDBY;
   `chip_start_rx()` is called immediately to re-arm continuous receive mode.
+
+- **GPIO implementation** — GPIO is controlled via libgpiod (preferred) with a fallback
+  to the legacy sysfs interface when libgpiod is not available at build time. libgpiod
+  supports Pi Zero 2 W, Pi 3, Pi 4, and Pi 5 without any pin offset calculation.
+  Both libgpiod v1 (Debian Bullseye/Bookworm) and v2 (Debian Trixie and later) are
+  supported via compile-time version detection (`LIBGPIOD_VERSION_MAJOR`).
+  The running user must be in the `gpio` group, or Dire Wolf must run as root, for
+  libgpiod to claim GPIO lines. If GPIO setup fails, Dire Wolf prints an error for each
+  failed pin and continues — but TX power and RX sensitivity will be degraded on hats
+  with external PA/LNA (TX_EN and RX_EN will not be driven).
+
+  **Important:** the legacy sysfs GPIO interface does not release exported pins when the
+  process exits. If Dire Wolf previously ran with sysfs GPIO, those pins will show
+  `consumer="sysfs"` in `gpioinfo` and libgpiod will be unable to claim them. To clear:
+  find the chip base offset (`ls /sys/class/gpio/`), then unexport each pin
+  (`echo <base+bcm> | sudo tee /sys/class/gpio/unexport`).
 
 - **`MEDIUM_LORA` channel medium** — added to `enum medium_e` in `audio.h` alongside
   the existing `MEDIUM_RADIO`, `MEDIUM_NETTNC`, `MEDIUM_SERTNC`. All existing code

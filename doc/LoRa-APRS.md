@@ -20,6 +20,7 @@ Dire Wolf talks directly to the LoRa chip over SPI. No Python packages or separa
 
 - Raspberry Pi (any model with SPI)
 - Supported LoRa hat (see Hardware Profiles below)
+- `libgpiod-dev` installed (included automatically by `install-lora.sh`)
 
 ---
 
@@ -47,9 +48,17 @@ cd direwolf
 sudo bash install-lora.sh
 ```
 
-The script installs dependencies, builds Dire Wolf, enables SPI, and creates a starter config at `/etc/direwolf/direwolf.conf`. It will prompt you for your callsign, passcode, location, hardware profile, and frequency.
+The script installs dependencies (including `libgpiod-dev`), builds Dire Wolf, enables SPI, and creates a starter config at `/etc/direwolf/direwolf.conf`. It will prompt you for your callsign, passcode, location, hardware profile, and frequency.
 
 SPI is enabled automatically. If a reboot is required the script will say so — reboot before using the LoRa hat.
+
+4. Add your user to the `gpio` group so Dire Wolf can access GPIO without root:
+
+```bash
+sudo usermod -a -G gpio $USER
+```
+
+Log out and back in (or reboot) for this to take effect.
 
 ---
 
@@ -63,7 +72,7 @@ git pull
 sudo bash install-lora.sh --upgrade
 ```
 
-The `--upgrade` flag skips the config prompts and does not overwrite `/etc/direwolf/direwolf.conf`. It rebuilds and reinstalls the binary, then restarts the Dire Wolf service automatically.
+The `--upgrade` flag skips the config prompts and does not overwrite `/etc/direwolf/direwolf.conf`. It rebuilds and reinstalls the binary, then restarts the Dire Wolf service automatically. The script detects whichever service name is running (`direwolf` or a custom name like `direwolf-chase`) and restarts the correct one.
 
 ---
 
@@ -181,23 +190,41 @@ Colors are suppressed automatically when output is redirected to a file or syste
 ## Troubleshooting
 
 **No init message at startup**
-- Check SPI is enabled: ls /dev/spidev*
-- Check I2C is enabled: ls /dev/i2c*
+- Check SPI is enabled: `ls /dev/spidev*`
 - Verify LORAHW in direwolf.conf matches a known profile name (case-sensitive)
-- Check SPI device permissions: ls -l /dev/spidev*
+- Check SPI device permissions: `ls -l /dev/spidev*`
 - Ensure the LCHANNEL block appears before any PBEACON lines in direwolf.conf
 - Make sure the LoRa hat is fully and correctly seated on the GPIO header
 
 **"Config file: Send to channel N is not valid"**
 - The LCHANNEL block must appear **before** any PBEACON sendto=N lines in direwolf.conf. Move the LCHANNEL block to the top of the file.
 
-**SX1262 BUSY timeout at startup**
-- The SX1262 TCXO needs time to stabilize. This is handled automatically by the driver. If you still see BUSY timeouts, check that the hat is properly seated and powered.
+**"GPIO setup failed for output/input pin N"**
+- Dire Wolf could not claim a GPIO pin via libgpiod. Run `sudo gpioinfo` to see what is holding it.
+- If the consumer shown is `sysfs`, a previous run left the pin exported via the legacy sysfs interface. Clear it:
+  ```bash
+  # Find the sysfs base offset first
+  ls /sys/class/gpio/
+  # Then unexport each pin (base + BCM number, e.g. base=512, pin 12 → 524)
+  for n in 524 525 528 530 532 533; do echo $n | sudo tee /sys/class/gpio/unexport; done
+  ```
+  Adjust the numbers to match your system's base offset and hardware profile pins.
+- If the consumer is another process, ensure only one instance of Dire Wolf is running.
+- If Dire Wolf is running as a non-root user, ensure the user is in the `gpio` group:
+  ```bash
+  sudo usermod -a -G gpio $USER
+  ```
+  Then log out and back in.
 
-**No packets received**
+**SX1262 BUSY timeout at startup**
+- Usually caused by killing Dire Wolf and immediately restarting before the chip has recovered. Wait a few seconds and try again.
+- If running as a systemd service, `sudo systemctl restart <service-name>` handles this cleanly.
+- If the problem persists after a clean start, check that the hat is properly seated and powered.
+
+**No packets received / poor range**
 - Confirm frequency and sync word match other stations (433.775 MHz, 0x12 is standard)
 - Verify spreading factor (SF12 is standard)
-- Check Dire Wolf console for SPI errors
+- Check Dire Wolf console for SPI errors or GPIO setup failures — if GPIO is not working, the external PA and LNA on the hat will not be enabled, severely reducing TX power and RX sensitivity
 - Verify the LoRa hat is correctly seated on the GPIO header
 
 ---
