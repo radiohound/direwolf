@@ -1030,11 +1030,13 @@ static int sx1262_receive (lora_chan_t *lc, uint8_t *buf, int maxlen,
     memcpy(buf, rd_rx + 3, nb);
 
     /* Packet status: RSSI, SNR */
-    uint8_t ps_cmd[4] = { SX1262_CMD_GET_PACKET_STATUS, 0, 0, 0 };
-    uint8_t ps_rx[4];
-    sx1262_cmd(lc, ps_cmd, ps_rx, 4);
-    *rssi_out = -(ps_rx[1] / 2);
-    *snr_out  = (int8_t)ps_rx[2] / 4.0f;
+    /* GetPacketStatus: [0]=opcode echo, [1]=status (NOP), [2]=RssiPkt,
+     * [3]=SnrPkt (int8, /4), [4]=SignalRssiPkt.  Needs 5 bytes. */
+    uint8_t ps_cmd[5] = { SX1262_CMD_GET_PACKET_STATUS, 0, 0, 0, 0 };
+    uint8_t ps_rx[5];
+    sx1262_cmd(lc, ps_cmd, ps_rx, 5);
+    *rssi_out = -(ps_rx[2] / 2);
+    *snr_out  = (int8_t)ps_rx[3] / 4.0f;
 
     return nb;
 }
