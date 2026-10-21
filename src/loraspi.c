@@ -576,7 +576,7 @@ static void spi_transfer (int fd, int cs_pin, const uint8_t *tx, uint8_t *rx, in
 #define SX1276_REG_PAYLOAD_LENGTH   0x22
 #define SX1276_REG_MAX_PAYLOAD      0x23
 #define SX1276_REG_MODEM_CONFIG3    0x26
-#define SX1276_REG_RSSI_VALUE       0x1A
+#define SX1276_REG_RSSI_VALUE       0x1B
 #define SX1276_REG_PKT_SNR          0x19
 #define SX1276_REG_PKT_RSSI         0x1A
 #define SX1276_REG_DETECT_OPTIMIZE  0x31
@@ -807,6 +807,7 @@ static void sx1276_start_rx (lora_chan_t *lc) {
 #define SX1262_CMD_SET_BUFFER_BASE_ADDR  0x8F
 #define SX1262_CMD_GET_RX_BUFFER_STATUS  0x13
 #define SX1262_CMD_GET_PACKET_STATUS     0x14
+#define SX1262_CMD_GET_RSSI_INST         0x15
 #define SX1262_CMD_READ_BUFFER           0x1E
 #define SX1262_CMD_WRITE_BUFFER          0x0E
 #define SX1262_CMD_WRITE_REGISTER        0x0D
@@ -1208,9 +1209,32 @@ static const uint8_t LORA_PREAMBLE[LORA_PREAMBLE_LEN] = { 0x3C, 0xFF, 0x01 };
 /* =========================================================================
  * RX thread
  * ========================================================================= */
+/* Instantaneous (channel) RSSI while in RX -- used for noise-floor logging */
+static int sx1262_rssi_inst (lora_chan_t *lc) {
+    uint8_t cmd[3] = { SX1262_CMD_GET_RSSI_INST, 0, 0 };
+    uint8_t rx[3];
+    sx1262_cmd(lc, cmd, rx, 3);
+    return -(rx[2] / 2);
+}
+
+static int sx1276_rssi_inst (lora_chan_t *lc) {
+    int off = (lc->freq_mhz < 600.0f) ? -164 : -157;
+    return off + sx1276_read_reg(lc, SX1276_REG_RSSI_VALUE);
+}
+
+static int chip_rssi_inst (lora_chan_t *lc) {
+    if (lc->chip == LORA_CHIP_SX1262) return sx1262_rssi_inst(lc);
+    return sx1276_rssi_inst(lc);
+}
+
 static void *rx_thread (void *arg) {
     lora_chan_t *lc = (lora_chan_t *)arg;
     uint8_t buf[256];
+
+    /* Noise floor: sample idle channel RSSI ~1/s, report every 60 s */
+    int nf_tick = 0, nf_n = 0, nf_min = 0, nf_max = -200;
+    double nf_pwr = 0.0;
+    time_t nf_start = time(NULL);
 
     pthread_mutex_lock(&lc->spi_lock);
     chip_start_rx(lc);
@@ -1222,6 +1246,26 @@ static void *rx_thread (void *arg) {
         pthread_mutex_lock(&lc->spi_lock);
         int nb = chip_receive(lc, buf, sizeof(buf), &rssi, &snr);
         pthread_mutex_unlock(&lc->spi_lock);
+
+        if (nb <= 0 && ++nf_tick >= 100) {
+            nf_tick = 0;
+            pthread_mutex_lock(&lc->spi_lock);
+            int r = chip_rssi_inst(lc);
+            pthread_mutex_unlock(&lc->spi_lock);
+            if (nf_n == 0 || r < nf_min) nf_min = r;
+            if (r > nf_max) nf_max = r;
+            nf_pwr += pow(10.0, r / 10.0);
+            nf_n++;
+        }
+        if (time(NULL) - nf_start >= 60) {
+            if (nf_n > 0) {
+                text_color_set(DW_COLOR_INFO);
+                dw_printf ("loraspi: noise floor ch%d: avg %.1f dBm  min %d  max %d  (n=%d)\n",
+                           lc->chan, 10.0 * log10(nf_pwr / nf_n), nf_min, nf_max, nf_n);
+            }
+            nf_n = 0; nf_max = -200; nf_pwr = 0.0;
+            nf_start = time(NULL);
+        }
 
         if (nb > 0) {
             /* Strip LoRa APRS preamble (0x3C 0xFF 0x01) if present */
