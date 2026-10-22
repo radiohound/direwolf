@@ -37,13 +37,8 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include <unistd.h>
-#include <fcntl.h>
 #include <errno.h>
 #include <time.h>
-#include <pthread.h>
-#include <sys/ioctl.h>
-#include <linux/spi/spidev.h>
 
 #include <math.h>
 #include "textcolor.h"
@@ -60,6 +55,14 @@ void loraspi_init (struct audio_s *pa) { (void)pa; }
 void loraspi_send_packet (int chan, packet_t pp) { (void)chan; (void)pp; }
 int  loraspi_apply_profile (int chan, const char *name, struct audio_s *pa) { (void)chan; (void)name; (void)pa; return -1; }
 #else
+
+/* POSIX and Linux-only headers: kept inside the guard so macOS, BSD and
+ * Windows/MinGW builds only see the stubs above. */
+#include <unistd.h>
+#include <fcntl.h>
+#include <pthread.h>
+#include <sys/ioctl.h>
+#include <linux/spi/spidev.h>
 
 /* =========================================================================
  * TX queue
