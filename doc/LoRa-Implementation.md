@@ -4,13 +4,14 @@ This document is for developers who want to understand how the LoRa APRS
 support is implemented, build Dire Wolf from source with LoRa support, or
 contribute changes back to the upstream WB2OSZ/direwolf project.
 
-For end-user setup, see [LoRa-APRS.md](LoRa-APRS.md) and [LoRa-SDR.md](LoRa-SDR.md).
+For end-user setup, see [LoRa-APRS.md](LoRa-APRS.md).
 
 ---
 
 ## Architecture
 
-Two paths are available for receiving and transmitting LoRa APRS frames:
+LoRa frames are sent and received by a native SPI driver that talks directly to the
+LoRa HAT:
 
 ```
 ┌──────────────────────────────────────────────────────┐
@@ -19,23 +20,17 @@ Two paths are available for receiving and transmitting LoRa APRS frames:
 │  APRS-IS ──────── igate.c                            │
 │  beacon.c ──► tq.c                                   │
 │                    │                                  │
-│         ┌──────────┴──────────────┐                  │
-│         │                         │                  │
-│     loraspi.c                 nchannel               │
-│     LCHANNEL                  NCHANNEL               │
-│  (native SPI driver)     (external KISS TNC)         │
-└──────┬──────────────────────────────┬────────────────┘
-       │  Linux spidev + libgpiod     │  KISS TCP
-┌──────┴──────────────┐      ┌────────┴────────────────┐
-│                     │      │                          │
-│  SX1276 / SX1262   │      │  lora_sdr_bridge.py      │
-│  LoRa hat           │      │  (RTL-SDR + GNU Radio    │
-│  (RX + TX)          │      │   RX only)               │
-└─────────────────────┘      └──────────────────────────┘
+│                loraspi.c                              │
+│                LCHANNEL                               │
+│            (native SPI driver)                        │
+└─────────────────────┬─────────────────────────────────┘
+                      │  Linux spidev + libgpiod
+            ┌─────────┴───────────┐
+            │  SX1276 / SX1262    │
+            │  LoRa hat           │
+            │  (RX + TX)          │
+            └─────────────────────┘
 ```
-
-External KISS TNCs (including the SDR bridge) connect via the standard Dire Wolf
-`NCHANNEL` mechanism — no LoRa-specific code is involved on that path.
 
 ---
 
@@ -106,130 +101,18 @@ LoRa implementation.
 | `src/loraspi.c` | Native SPI driver for SX1276 and SX1262 LoRa chips. Implements `loraspi_init()` (opens spidev, configures chip, starts rx/tx threads), `loraspi_send_packet()` (encodes AX.25 to TNC2, prepends LoRa preamble, transmits), and `loraspi_apply_profile()` (copies a named hardware profile into `audio_s`). Linux-only; a no-op stub is compiled on non-Linux platforms. |
 | `src/loraspi.h` | Public interface for `loraspi.c` — declares `loraspi_init()`, `loraspi_send_packet()`, and `loraspi_apply_profile()`. |
 
-### Bridge scripts
-
-| File | Purpose |
-|------|---------|
-| `scripts/lora_sdr_bridge.py` | SDR bridge — acts as a KISS TCP server. GNU Radio demodulates LoRa frames from an RTL-SDR and passes them to this bridge, which encodes them as AX.25 UI frames wrapped in KISS framing. Dire Wolf connects to it via `NCHANNEL`. RX only. |
-| `scripts/lora_sdr_flowgraph.py` | GNU Radio flowgraph — receives IQ samples from an RTL-SDR, demodulates LoRa using gr-lora_sdr blocks, and delivers decoded frames as GNU Radio PDU messages. |
-
 ### systemd
 
 | File | Purpose |
 |------|---------|
 | `systemd/direwolf.service` | systemd unit for Dire Wolf. |
-| `systemd/lora-sdr-bridge.service` | systemd unit for the SDR bridge. |
 
 ### Documentation
 
 | File | Purpose |
 |------|---------|
 | `doc/LoRa-APRS.md` | End-user setup guide — native SPI driver. |
-| `doc/LoRa-SDR.md` | End-user setup guide for the SDR receive path. |
 | `doc/LoRa-Implementation.md` | This file. |
-
-### Tests
-
-| File | Purpose |
-|------|---------|
-| `scripts/test_sdr_bridge.py` | Unit tests for the SDR bridge using simulated PDU messages. |
-| `scripts/test_sdr_simulation.py` | Extended simulation tests covering preamble stripping, SNR prefix, and edge cases. |
-
----
-
-## SDR demodulation — gr-lora_sdr
-
-The SDR bridge uses the **tapparelj/gr-lora_sdr** GNU Radio out-of-tree module for LoRa
-demodulation:
-
-- **Repository:** https://github.com/tapparelj/gr-lora_sdr
-- **Tested with:** GNU Radio 3.10, gr-lora_sdr built from source
-- **Supported platforms:** Raspberry Pi 4/5, x86-64 Linux
-
-### Installation (from source)
-
-```bash
-# Install GNU Radio 3.10
-sudo apt install gnuradio
-
-# Clone and build gr-lora_sdr
-git clone https://github.com/tapparelj/gr-lora_sdr
-cd gr-lora_sdr
-mkdir build && cd build
-cmake -DCMAKE_INSTALL_PREFIX=/usr ..
-make -j$(nproc)
-sudo make install
-sudo ldconfig
-```
-
-### Known issues with gr-lora_sdr on GNU Radio 3.10
-
-Two bugs were found during development and worked around in `lora_sdr_flowgraph.py`:
-
-**1. `blocks.copy` ignores `set_min_output_buffer`**
-`blocks.copy` uses zero-copy buffer aliasing in GR 3.10, so `set_min_output_buffer()`
-has no effect. The frame sync block needs a larger input buffer or it loses the start
-of long SF12 packets.
-*Workaround:* Replace `blocks.copy` with `blocks.multiply_const_cc(1.0)`, which forces
-real buffer allocation and respects `set_min_output_buffer()`. Note that
-`set_min_output_buffer()` takes **bytes**, not items.
-
-**2. PMT functions fail on binary payloads containing 0xFF bytes**
-All PMT functions that accept or return `pmt_t` go through a SWIG typemap that calls
-`pmt_to_python()`, which attempts a UTF-8 decode. LoRa APRS preamble bytes
-(`0x3C 0xFF 0x01`) cause a `UnicodeDecodeError`.
-*Workaround:* Use `pmt.serialize_str(msg)` which returns Python `bytes` directly, then
-manually parse the 3-byte header `[type][len_hi][len_lo]` before the payload data.
-
-### Decode quality and soft-decision decoding
-
-gr-lora_sdr decodes most packets correctly at SF12/BW125. Marginal packets (weak signals,
-digipeated packets with slightly different timing from re-transmission) can produce bit
-errors in the LoRa header, causing the demodulator to report a wrong payload length or
-CRC presence flag, which cascades into garbled payload bytes. The hardware SX1276/SX1262
-chip does not have this issue because it performs demodulation in dedicated silicon.
-
-**Soft-decision (LLR) decoding is enabled** in `lora_sdr_flowgraph.py` to improve
-performance on marginal signals. The following blocks are constructed with their
-`soft_decoding` / `is_header` flag set to `True`:
-
-```python
-fft_demod      = lora_sdr.fft_demod(True, True)       # soft LLR output
-gray_mapping   = lora_sdr.gray_mapping(True)           # soft input/output
-deinterleaver  = lora_sdr.deinterleaver(True)          # soft input/output
-hamming_dec    = lora_sdr.hamming_dec(True)            # soft input/output
-```
-
-This passes log-likelihood ratios through the chain instead of hard 0/1 decisions,
-giving the Hamming decoder more information to correct errors.
-
----
-
-## TNC2 header validation in bridge scripts
-
-`lora_sdr_bridge.py` validates every decoded frame before forwarding it to Dire Wolf.
-The `_valid_tnc2_header()` method checks that the address field (everything before the
-first `:`) consists only of characters legal in a TNC2 address (`[A-Z0-9>,-*]`) and
-that the source callsign has a valid structure (1–6 alphanumeric characters, optional
-SSID 0–15). Any lowercase letter, backslash, or other unexpected character is a reliable
-indicator of a corrupted decode and causes the packet to be dropped with a WARNING log entry.
-
----
-
-## Colored log output
-
-Bridge scripts use `_ColorFormatter`, a `logging.Formatter` subclass that applies
-Dire Wolf-compatible ANSI colors to terminal output:
-
-| ANSI sequence | Color | Applied to |
-|---------------|-------|------------|
-| `\033[1;32m` | Bright green | INFO messages starting with `RX ` |
-| `\033[1;35m` | Bright magenta | INFO messages starting with `TX ` |
-| `\033[1;31m` | Bright red | WARNING and ERROR messages |
-| `\033[0;32m` | Dark green | DEBUG messages |
-| (none) | Default | Other INFO messages |
-
-Colors are suppressed when `sys.stderr.isatty()` returns `False`.
 
 ---
 
@@ -248,8 +131,7 @@ Example:
 ```
 
 The preamble (`<\xff\x01`) is required by all LoRa APRS firmware (ESP32 iGates,
-trackers, etc.). The native SPI driver and SDR bridge both strip it on receive and
-prepend it on transmit.
+trackers, etc.). The native SPI driver strips it on receive and prepends it on transmit.
 
 ---
 
@@ -282,7 +164,7 @@ request to WB2OSZ/direwolf.
 
 **New C files** (2): `src/loraspi.c`, `src/loraspi.h`
 
-The bridge scripts, documentation, and systemd units are independent of the Dire Wolf
+The installer script, documentation, and systemd unit are independent of the Dire Wolf
 build and can be contributed separately or maintained in this fork.
 
 Key design decisions that upstream reviewers may ask about:
