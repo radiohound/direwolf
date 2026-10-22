@@ -1471,7 +1471,7 @@ void config_init (char *fname, struct audio_s *p_audio_config,
 	      if (p_audio_config->chan_medium[lchan] == MEDIUM_NONE) {
 	        p_audio_config->chan_medium[lchan] = MEDIUM_LORA;
 	        /* Set defaults */
-	        p_audio_config->lora_freq_mhz[lchan]    = 915.0f;
+	        p_audio_config->lora_freq_mhz[lchan]    = 433.775f;	/* LoRa APRS standard */
 	        p_audio_config->lora_sf[lchan]           = 12;
 	        p_audio_config->lora_bw_khz[lchan]       = 125.0f;
 	        p_audio_config->lora_cr[lchan]           = 5;
@@ -1489,6 +1489,8 @@ void config_init (char *fname, struct audio_s *p_audio_config,
 	        p_audio_config->lora_spi_bus[lchan]      = 0;
 	        p_audio_config->lora_spi_dev[lchan]      = 0;
 	        p_audio_config->lora_spi_speed[lchan]    = 8000000;
+	        /* Default hardware: 1 W 433 MHz hat.  LORAHW overrides. */
+	        loraspi_apply_profile(lchan, "meshadv_400m30s", p_audio_config);
 	        channel = lchan;	/* set context for subsequent LORAHW etc. */
 	      }
 	      else {
@@ -1529,7 +1531,7 @@ void config_init (char *fname, struct audio_s *p_audio_config,
 	  }
 
 /*
- * LORAFREQ  frequency_mhz
+ * LORAFREQ  frequency_mhz	(default 433.775)
  *	Example: LORAFREQ 915.0
  */
 	  else if (strcasecmp(t, "LORAFREQ") == 0) {

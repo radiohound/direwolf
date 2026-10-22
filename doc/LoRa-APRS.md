@@ -78,6 +78,23 @@ The `--upgrade` flag skips the config prompts and does not overwrite `~/direwolf
 
 ## Configuration (direwolf.conf)
 
+### Where the LoRa settings live
+
+All LoRa settings are in `direwolf.conf`. There is no separate LoRa config file.
+
+- **`LCHANNEL n` sets the context.** Every line from `LCHANNEL` down to the next
+  `CHANNEL` or `LCHANNEL` line applies to that LoRa channel. Keep the block after the
+  VHF channel settings and before any `PBEACON` that uses `sendto=n`.
+- **`LORAHW` vs. the radio settings.** `LORAHW` picks the hardware profile: the module's
+  wiring, TCXO and maximum power (see Hardware Profiles below). `LORAFREQ`, `LORASF`,
+  `LORABW`, `LORACR`, `LORASW` and `LORATXPOWER` are the radio settings.
+- **`LORATXPOWER` is capped by the profile.** If it exceeds the profile's maximum
+  (for example 8 dBm on `meshadv_400m33s`), Dire Wolf prints an error and clamps it to
+  the hardware limit.
+- **Defaults.** If you leave them out, `LORAFREQ` is 433.775 MHz (the worldwide LoRa APRS
+  frequency) and `LORAHW` is `meshadv_400m30s` (1 W, 433 MHz). Set both explicitly if you use
+  a 868/915 MHz module or a different hat.
+
 The LCHANNEL block must appear **before** any PBEACON lines that reference that channel number.
 
 ```
@@ -88,12 +105,14 @@ CHANNEL 0
 MYCALL W1ABC-10
 MODEM 1200
 
-# LoRa SPI hat -- native driver
-# Must appear before any PBEACON lines referencing channel 10
+# ---- LoRa channel (native SPI HAT) ----
+# Every line from LCHANNEL down to the next CHANNEL/LCHANNEL line applies to the LoRa channel.
+# Keep this after the VHF channel settings and before any PBEACON that uses sendto=10.
+# LORAHW picks the module wiring/TCXO and its maximum power; the other LORA* lines are radio settings.
 LCHANNEL 10
 MYCALL W1ABC-10
 LORAHW lorapi_rfm95w        # hardware profile (see table below)
-LORAFREQ 433.775            # MHz (standard worldwide)
+LORAFREQ 433.775            # MHz (default; standard worldwide)
 LORASF 12                   # spreading factor
 LORABW 125                  # kHz bandwidth
 LORACR 5                    # coding rate 4/5
