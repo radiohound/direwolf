@@ -19,6 +19,7 @@ Dire Wolf talks directly to the LoRa chip over SPI. No Python packages or separa
 ## Requirements
 
 - Raspberry Pi (any model with SPI)
+- A user in the `gpio` and `spi` groups (see step 4 of the installation)
 - Supported LoRa hat (see Hardware Profiles below)
 - `libgpiod-dev` installed (included automatically by `install-lora.sh`)
 
@@ -48,14 +49,16 @@ cd direwolf
 sudo bash install-lora.sh
 ```
 
-The script installs dependencies (including `libgpiod-dev`), builds Dire Wolf, enables SPI, and creates a starter config at `~/direwolf.conf`. It will prompt you for your callsign, passcode, location, hardware profile, and frequency.
+The script installs dependencies (including `libgpiod-dev`), builds Dire Wolf, enables SPI, and creates a starter config at `~/direwolf.conf`. It will prompt you for your callsign, passcode, location, hardware profile, and frequency (press Enter for 433.775 MHz). It also installs a `direwolf` systemd service that runs as your user and starts Dire Wolf at boot.
+
+The installer assumes an RTL-SDR dongle for VHF APRS on every Pi model: it installs the RTL-SDR tools, blacklists the DVB driver, and the service pipes `rtl_fm` into Dire Wolf. For a LoRa-only station without a dongle, edit `ADEVICE` in `~/direwolf.conf` to `ADEVICE null null`, delete the VHF `CHANNEL 0` block, and change the `ExecStart` line of `/etc/systemd/system/direwolf.service` to `/usr/local/bin/direwolf -c /home/<you>/direwolf.conf`, then run `sudo systemctl daemon-reload`.
 
 SPI is enabled automatically. If a reboot is required the script will say so — reboot before using the LoRa hat.
 
-4. Add your user to the `gpio` group so Dire Wolf can access GPIO without root:
+4. Add your user to the `gpio` and `spi` groups so Dire Wolf can reach the GPIO lines and `/dev/spidev*` without root:
 
 ```bash
-sudo usermod -a -G gpio $USER
+sudo usermod -a -G gpio,spi $USER
 ```
 
 Log out and back in (or reboot) for this to take effect.
@@ -83,23 +86,37 @@ The `--upgrade` flag skips the config prompts and does not overwrite `~/direwolf
 All LoRa settings are in `direwolf.conf`. There is no separate LoRa config file.
 
 - **`LCHANNEL n` sets the context.** Every line from `LCHANNEL` down to the next
-  `CHANNEL` or `LCHANNEL` line applies to that LoRa channel. Keep the block after the
-  VHF channel settings and before any `PBEACON` that uses `sendto=n`.
+  `CHANNEL` or `LCHANNEL` line applies to that LoRa channel. `n` must be from
+  `MAX_RADIO_CHANS` up to `MAX_TOTAL_CHANS`-1 (6 to 15 in the default build), and at most 4 LoRa channels
+  are allowed. Put the block after the VHF channel settings and before any `PBEACON`
+  that uses `sendto=n`; a `PBEACON` that comes first fails with "Send to channel N is not valid".
+- **`LCHANNEL` vs. `NCHANNEL`/`SCHANNEL`.** Use `LCHANNEL` for a LoRa hat wired to the
+  Pi's SPI bus. Use `NCHANNEL`/`SCHANNEL` for an external LoRa KISS TNC (see
+  APRS-LoRa-VHF-APRS-Bridge.pdf).
 - **`LORAHW` vs. the radio settings.** `LORAHW` picks the hardware profile: the module's
   wiring, TCXO and maximum power (see Hardware Profiles below). `LORAFREQ`, `LORASF`,
   `LORABW`, `LORACR`, `LORASW` and `LORATXPOWER` are the radio settings.
-- **`LORATXPOWER` is capped by the profile.** If it exceeds the profile's maximum
+- **`LORATXPOWER` is capped by the profile.** If you set it above the profile's maximum
   (for example 8 dBm on `meshadv_400m33s`), Dire Wolf prints an error and clamps it to
-  the hardware limit.
-- **Defaults.** If you leave them out, `LORAFREQ` is 433.775 MHz (the worldwide LoRa APRS
-  frequency) and `LORAHW` is `meshadv_400m30s` (1 W, 433 MHz). Set both explicitly if you use
-  a 868/915 MHz module or a different hat.
+  the hardware limit. If you leave it out, the default is 20 dBm, quietly capped to the profile's maximum.
+- **Defaults and valid values.**
 
-The LCHANNEL block must appear **before** any PBEACON lines that reference that channel number.
+  | Directive | Default | Accepted values |
+  |---|---|---|
+  | `LORAHW` | `meshadv_400m30s` (1 W, 433 MHz) | a profile name from the table below (not case-sensitive) |
+  | `LORAFREQ` | 433.775 | 137 to 1020 MHz |
+  | `LORASF` | 12 | 7 to 12 |
+  | `LORABW` | 125 | 125, 250 or 500 (kHz) |
+  | `LORACR` | 5 | 5 to 8 (coding rate 4/5 to 4/8) |
+  | `LORASW` | 0x12 | 0x00 to 0xFF |
+  | `LORATXPOWER` | 20, capped to the profile maximum | 0 to 22 (dBm) |
+
+  Set `LORAHW` and `LORAFREQ` explicitly if you use a 868/915 MHz module or a different hat.
+  A value outside its range is rejected with an error and the default stays in effect.
 
 ```
 # VHF APRS via RTL-SDR (piped from rtl_fm on stdin)
-# On Pi 3 (no RTL-SDR) use: ADEVICE null null
+# With no RTL-SDR (LoRa only) use: ADEVICE null null
 ADEVICE stdin null
 CHANNEL 0
 MYCALL W1ABC-10
@@ -107,17 +124,16 @@ MODEM 1200
 
 # ---- LoRa channel (native SPI HAT) ----
 # Every line from LCHANNEL down to the next CHANNEL/LCHANNEL line applies to the LoRa channel.
-# Keep this after the VHF channel settings and before any PBEACON that uses sendto=10.
 # LORAHW picks the module wiring/TCXO and its maximum power; the other LORA* lines are radio settings.
 LCHANNEL 10
 MYCALL W1ABC-10
-LORAHW lorapi_rfm95w        # hardware profile (see table below)
-LORAFREQ 433.775            # MHz (default; standard worldwide)
+LORAHW lorapi_rfm98w        # hardware profile (see table below)
+LORAFREQ 433.775            # MHz (default; the most common LoRa APRS frequency)
 LORASF 12                   # spreading factor
 LORABW 125                  # kHz bandwidth
 LORACR 5                    # coding rate 4/5
 LORASW 0x12                 # LoRa APRS sync word
-LORATXPOWER 17              # dBm
+LORATXPOWER 17              # dBm (optional; default is the profile maximum, up to 20)
 
 # Position beacon over LoRa RF
 PBEACON delay=1 every=30 sendto=10 overlay=L symbol="igate" lat=0.0000 long=0.0000 comment="LoRa APRS iGate"
@@ -131,21 +147,21 @@ PBEACON delay=1 every=30 sendto=IG overlay=L symbol="igate" lat=0.0000 long=0.00
 ```
 
 Replace 0.0000 with your actual latitude and longitude in decimal degrees.
-Replace lorapi_rfm95w with the profile matching your hardware (see table below).
+Replace lorapi_rfm98w with the profile matching your hardware (see table below). For a 868/915 MHz module such as `lorapi_rfm95w`, also set `LORAFREQ` to your regional LoRa APRS frequency.
 Generate your APRS passcode at https://apps.magicbug.co.uk/passcode if needed.
 
 ---
 
 ## Starting Dire Wolf
 
-On Pi 4/5 (with RTL-SDR for VHF APRS):
+With an RTL-SDR for VHF APRS:
 
 ```bash
 sudo systemctl stop direwolf
 rtl_fm -f 144.390M -M fm -s 22050 -g 40 - | direwolf -c ~/direwolf.conf -r 22050 -
 ```
 
-On Pi 3 (LoRa only):
+LoRa only (`ADEVICE null null` in the config):
 
 ```bash
 sudo systemctl stop direwolf
@@ -155,20 +171,17 @@ direwolf -c ~/direwolf.conf
 On a successful start you will see:
 
 ```
-loraspi: GPIO chip base offset = 0
+loraspi: GPIO chip: /dev/gpiochip0 (libgpiod 2.1)
 LoRa channel 10: 433.775 MHz SF12 BW125.0 kHz CR 4/5 SX1262
 ```
 
+If the GPIO lines are claimed through the legacy sysfs interface instead (libgpiod not installed at build time), the first line reads `loraspi: GPIO sysfs base offset = N`.
+
 ### Run as a systemd service
 
-```bash
-sudo cp systemd/direwolf.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable direwolf
-sudo systemctl start direwolf
-```
+`install-lora.sh` already created, enabled and started the `direwolf` service, which runs as your user and reads `~/direwolf.conf`. Do not copy the generic `systemd/direwolf.service` from the source tree over it: that unit runs as a separate `direwolf` user and cannot read your home directory or reach the GPIO lines.
 
-Monitor: journalctl -u direwolf -f
+Monitor: `journalctl -u direwolf -f`. Add `-t 0` to the `direwolf` command line to turn off the color codes in the journal.
 
 ---
 
@@ -195,16 +208,16 @@ Profiles are selected with LORAHW in direwolf.conf. They are defined in the s_pr
 | lorapi_rfm98w | Digital Concepts LoRa-Pi (RFM98W) | SX1278 | 433 MHz | 17 dBm | yes | yes |
 | generic_sx1276 | Generic SX1276/SX1278 breakout | SX1276 | varies | 17 dBm | | |
 
-> **33S modules:** The `max_tx_power_dbm` for 33S variants is the maximum safe input to the SX1262 register — the external PA amplifies this to ~33 dBm output. Setting `LORATXPOWER` above 8 on a 33S module will damage the PA. Dire Wolf enforces this limit automatically and will print an error and clamp the value if exceeded.
+> **33S modules:** setting `LORATXPOWER` above 8 on a 33S module can damage its external PA. Dire Wolf clamps the value to the profile limit and prints an error. See [LoRa-Implementation.md](LoRa-Implementation.md#tx-power-clamping) for why.
 
-To add support for a new LoRa hat, add a row to the s_profiles[] array in src/loraspi.c and rebuild Dire Wolf.
+To add support for a hat that is not listed, see the last section.
 
 ---
 
 ## LoRa APRS frequency
 
-433.775 MHz is the standard LoRa APRS frequency worldwide.
-Standard parameters: SF12, BW125, CR4/5, sync word 0x12.
+433.775 MHz is the most common LoRa APRS frequency. Typical parameters are SF12, BW125, CR4/5 and sync word 0x12.
+Some regions use other frequencies or faster settings, so match what the LoRa APRS stations near you use.
 
 ---
 
@@ -216,7 +229,18 @@ Standard parameters: SF12, BW125, CR4/5, sync word 0x12.
 | Magenta | Packet transmitted over LoRa radio |
 | Red | Error or invalid/dropped packet |
 
-Colors are suppressed automatically when output is redirected to a file or systemd journal.
+Dire Wolf does not detect whether output is a terminal. Use `-t 0` when logging to a file or the journal to turn the colors off.
+
+Each received packet line ends with the signal strength, for example `RSSI=-97 dBm SNR=7.5 dB`. Packets that fail to parse are logged with their RSSI and SNR too. While the channel is idle, Dire Wolf logs the noise floor (average, minimum and maximum RSSI) every 60 seconds, which helps with antenna and placement tests.
+
+---
+
+## What works over a LoRa channel
+
+- **Works:** beacons (`PBEACON sendto=n`), digipeating (`DIGIPEAT`), the APRS-IS iGate in both directions, KISS and AGW clients, and `IGTXVIA`. AGW clients see the channel as `PortN LoRa`.
+- **Not supported:** connected-mode AX.25 (`CDIGIPEAT`, `ax25_link`) is limited to radio channels with a modem.
+- **No channel-access control:** the LoRa driver transmits when a packet reaches the queue. It does not listen first, and `TXDELAY`, `PERSIST` and `SLOTTIME` do not apply. Keep beacon intervals long, especially at SF12, where one packet takes over two seconds. Observe your local duty-cycle and band rules.
+- **Packet size:** a LoRa frame carries at most 255 bytes including the 3-byte header. Longer packets are dropped with an error.
 
 ---
 
@@ -224,13 +248,12 @@ Colors are suppressed automatically when output is redirected to a file or syste
 
 **No init message at startup**
 - Check SPI is enabled: `ls /dev/spidev*`
-- Verify LORAHW in direwolf.conf matches a known profile name (case-sensitive)
-- Check SPI device permissions: `ls -l /dev/spidev*`
-- Ensure the LCHANNEL block appears before any PBEACON lines in direwolf.conf
+- Verify LORAHW in direwolf.conf matches a known profile name
+- Check SPI device permissions: `ls -l /dev/spidev*` (your user needs the `spi` group)
 - Make sure the LoRa hat is fully and correctly seated on the GPIO header
 
 **"Config file: Send to channel N is not valid"**
-- The LCHANNEL block must appear **before** any PBEACON sendto=N lines in direwolf.conf. Move the LCHANNEL block to the top of the file.
+- The LCHANNEL block must appear **before** any PBEACON sendto=N lines in direwolf.conf. Move any such PBEACON below the LCHANNEL block.
 
 **"GPIO setup failed for output/input pin N"**
 - Dire Wolf could not claim a GPIO pin via libgpiod. Run `sudo gpioinfo` to see what is holding it.
@@ -243,9 +266,9 @@ Colors are suppressed automatically when output is redirected to a file or syste
   ```
   Adjust the numbers to match your system's base offset and hardware profile pins.
 - If the consumer is another process, ensure only one instance of Dire Wolf is running.
-- If Dire Wolf is running as a non-root user, ensure the user is in the `gpio` group:
+- If Dire Wolf is running as a non-root user, ensure the user is in the `gpio` and `spi` groups:
   ```bash
-  sudo usermod -a -G gpio $USER
+  sudo usermod -a -G gpio,spi $USER
   ```
   Then log out and back in.
 
@@ -264,40 +287,4 @@ Colors are suppressed automatically when output is redirected to a file or syste
 
 ## Adding support for a new LoRa hat
 
-Hardware profiles are defined in the s_profiles[] array in src/loraspi.c. Each row defines the chip type, SPI bus, and GPIO pin assignments for one hat.
-
-To add a new profile:
-
-1. Open src/loraspi.c and find the s_profiles[] array.
-2. Add a new row following this format:
-
-```c
-{ "profile_name", LORA_CHIP_SX1262, bus, dev, cs, reset, irq, busy, tx_en, rx_en, pa_boost, tcxo, tcxo_voltage, max_tx_power_dbm },
-```
-
-| Field | Description |
-|-------|-------------|
-| profile_name | Name used in LORAHW in direwolf.conf |
-| chip | LORA_CHIP_SX1276 or LORA_CHIP_SX1262 |
-| bus, dev | SPI bus and device (usually 0, 0) |
-| cs | BCM GPIO pin number for chip select |
-| reset | BCM GPIO pin number for reset |
-| irq | BCM GPIO pin number for DIO0 (SX1276) or DIO1 (SX1262) |
-| busy | BCM GPIO pin for BUSY (SX1262 only, -1 for SX1276) |
-| tx_en | BCM GPIO pin for TX enable (-1 if not used) |
-| rx_en | BCM GPIO pin for RX enable (-1 if not used) |
-| pa_boost | true for SX1276 PA_BOOST pin, false for RFO |
-| tcxo | true if the module uses a TCXO (most SX1262 modules do) |
-| tcxo_voltage | TCXO supply voltage in volts (check module datasheet — typically 1.8V for 900 MHz, 2.2V for 400 MHz) |
-| max_tx_power_dbm | Maximum safe LORATXPOWER register input value — Dire Wolf clamps and warns if exceeded. For modules with an external PA (33S variants) this is the SX1262 input level, not the RF output power. |
-
-3. Pin numbers are BCM GPIO numbers. Check your hat's schematic or documentation for the correct assignments.
-4. Rebuild and reinstall Dire Wolf:
-
-```bash
-cd ~/direwolf
-make -C build -j$(nproc)
-sudo make -C build install
-```
-
-5. Set LORAHW your_profile_name in direwolf.conf and start Dire Wolf.
+See [LoRa-Implementation.md](LoRa-Implementation.md#adding-support-for-a-new-lora-hat).

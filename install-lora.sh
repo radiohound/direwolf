@@ -19,7 +19,8 @@
 #
 # Usage:
 #   Fresh install:
-#     git clone https://github.com/radiohound/direwolf.git
+#     git clone -b feature/lora-spi https://github.com/radiohound/direwolf.git
+#   (After this work is merged upstream, clone wb2osz/direwolf instead.)
 #     cd direwolf
 #     sudo bash install-lora.sh
 #
@@ -129,9 +130,9 @@ prompt_config() {
 
     LORAFREQ=""
     while [ -z "$LORAFREQ" ]; do
-        printf "LoRa frequency MHz (433.775 MHz is standard worldwide): " > /dev/tty
+        printf "LoRa frequency MHz [433.775, the most common LoRa APRS frequency]: " > /dev/tty
         read -r LORAFREQ < /dev/tty || true
-        [ -z "$LORAFREQ" ] && warn "Frequency cannot be empty."
+        [ -z "$LORAFREQ" ] && LORAFREQ="433.775"
     done
 
     echo "" > /dev/tty
