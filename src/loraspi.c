@@ -12,7 +12,7 @@
  *
  * LoRa APRS air format:
  *   0x3C 0xFF 0x01 <TNC2 text>
- * The preamble is stripped on receive and prepended on transmit.
+ * The 3-byte header is stripped on receive and prepended on transmit.
  *
  * Architecture:
  *   loraspi_init()  —  called once from direwolf.c at startup
@@ -51,7 +51,14 @@
  * Compile guard — Linux SPI/GPIO only
  * ========================================================================= */
 #ifndef __linux__
-void loraspi_init (struct audio_s *pa) { (void)pa; }
+void loraspi_init (struct audio_s *pa) {
+    for (int chan = 0; chan < MAX_TOTAL_CHANS; chan++) {
+        if (pa->chan_medium[chan] == MEDIUM_LORA) {
+            text_color_set(DW_COLOR_ERROR);
+            dw_printf ("LCHANNEL %d: the native SPI LoRa driver is available only on Linux.\n", chan);
+        }
+    }
+}
 void loraspi_send_packet (int chan, packet_t pp) { (void)chan; (void)pp; }
 int  loraspi_apply_profile (int chan, const char *name, struct audio_s *pa) { (void)chan; (void)name; (void)pa; return -1; }
 #else
@@ -1202,8 +1209,8 @@ static bool chip_transmit (lora_chan_t *lc, const uint8_t *data, int len) {
  * LoRa APRS uses TNC2 ASCII text on the air.  Dire Wolf works with binary
  * AX.25 packet objects internally.  These helpers bridge the two.
  *
- * On receive: strip 3-byte preamble, pass TNC2 text to ax25_from_text().
- * On transmit: ax25_to_text() → prepend preamble → send over LoRa.
+ * On receive: strip 3-byte header, pass TNC2 text to ax25_from_text().
+ * On transmit: ax25_to_text() → prepend header → send over LoRa.
  */
 
 #define LORA_PREAMBLE_LEN 3
@@ -1271,7 +1278,7 @@ static void *rx_thread (void *arg) {
         }
 
         if (nb > 0) {
-            /* Strip LoRa APRS preamble (0x3C 0xFF 0x01) if present */
+            /* Strip LoRa APRS header (0x3C 0xFF 0x01) if present */
             uint8_t *payload = buf;
             int plen = nb;
             if (plen >= LORA_PREAMBLE_LEN &&
@@ -1375,9 +1382,12 @@ void loraspi_init (struct audio_s *pa) {
         lc->txpower  = pa->lora_txpower[chan];
         int max_pwr  = pa->lora_max_txpower[chan];
         if (max_pwr > 0 && lc->txpower > max_pwr) {
-            text_color_set(DW_COLOR_ERROR);
-            dw_printf ("LoRa channel %d: LORATXPOWER %d dBm exceeds hardware limit of %d dBm — clamping.\n",
-                       chan, lc->txpower, max_pwr);
+            /* Complain only if the user asked for this power; the 20 dBm default just follows the hardware. */
+            if (pa->lora_txpower_set[chan]) {
+                text_color_set(DW_COLOR_ERROR);
+                dw_printf ("LoRa channel %d: LORATXPOWER %d dBm exceeds hardware limit of %d dBm — clamping.\n",
+                           chan, lc->txpower, max_pwr);
+            }
             lc->txpower = max_pwr;
         }
 
@@ -1443,11 +1453,16 @@ void loraspi_send_packet (int chan, packet_t pp) {
     ax25_format_addrs(pp, tnc2);
     unsigned char *pinfo;
     int info_len = ax25_get_info(pp, &pinfo);
-    if (info_len > 0 && info_len < (int)(sizeof(tnc2) - strlen(tnc2) - 1)) {
+    if (info_len > 0) {
+        if (info_len >= (int)(sizeof(tnc2) - strlen(tnc2))) {
+            text_color_set(DW_COLOR_ERROR);
+            dw_printf ("loraspi: TX packet too long (info %d bytes) — dropped\n", info_len);
+            return;
+        }
         strncat(tnc2, (char *)pinfo, info_len);
     }
 
-    /* Build wire payload: preamble + TNC2 */
+    /* Build wire payload: header + TNC2 */
     uint8_t payload[256];
     int tnc2_len = (int)strlen(tnc2);
     int total = LORA_PREAMBLE_LEN + tnc2_len;

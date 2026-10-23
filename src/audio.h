@@ -178,11 +178,12 @@ struct audio_s {
 
 	int  lora_chip[MAX_TOTAL_CHANS];		// LORA_CHIP_SX1276 or LORA_CHIP_SX1262 (from loraspi.h)
 	float lora_freq_mhz[MAX_TOTAL_CHANS];		// Centre frequency, e.g. 915.0
-	int  lora_sf[MAX_TOTAL_CHANS];			// Spreading factor 6-12
+	int  lora_sf[MAX_TOTAL_CHANS];			// Spreading factor 7-12
 	float lora_bw_khz[MAX_TOTAL_CHANS];		// Bandwidth: 125, 250, 500 kHz
 	int  lora_cr[MAX_TOTAL_CHANS];			// Coding rate 5-8 (denominator of 4/x)
 	int  lora_sw[MAX_TOTAL_CHANS];			// Sync word (0x12 = LoRa-APRS standard)
 	int  lora_txpower[MAX_TOTAL_CHANS];		// TX power dBm
+	int  lora_txpower_set[MAX_TOTAL_CHANS];		// 1 if LORATXPOWER was given (else default, quietly capped to hardware limit)
 	int  lora_max_txpower[MAX_TOTAL_CHANS];		// Hardware PA limit dBm (0 = unconstrained)
 	int  lora_pin_cs[MAX_TOTAL_CHANS];		// GPIO chip-select (BCM)
 	int  lora_pin_reset[MAX_TOTAL_CHANS];		// GPIO reset (-1 = not wired)

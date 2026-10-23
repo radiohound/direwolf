@@ -159,12 +159,7 @@ install_deps() {
         libsndfile1-dev libasound2-dev \
         libgps-dev gpsd \
         libhamlib-dev \
-        libgpiod-dev \
-        python3-pip
-
-    info "Installing Python packages..."
-    pip3 install --break-system-packages pyyaml LoRaRF 2>/dev/null \
-        || pip3 install pyyaml LoRaRF
+        libgpiod-dev
 
     # RTL-SDR tools needed on all Pi models for VHF APRS via rtl_fm
     info "Installing RTL-SDR tools..."

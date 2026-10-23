@@ -4,8 +4,7 @@
  * Public interface for loraspi.c.  Handles SX1276 and SX1262 LoRa modules
  * connected directly to a Raspberry Pi (or compatible SBC) via SPI and GPIO.
  *
- * Called from direwolf.c at startup when a CHANNEL with MODEM LORA is
- * configured.  Packets received over LoRa are injected into the normal
+ * Called from direwolf.c at startup when an LCHANNEL is configured.  Packets received over LoRa are injected into the normal
  * Dire Wolf frame queue.  Outgoing packets are routed here from tq.c.
  */
 
@@ -35,7 +34,7 @@ void loraspi_init (struct audio_s *pa);
  * loraspi_send_packet  —  Transmit a packet over LoRa.
  *
  * Called from tq.c when a packet is queued for a MEDIUM_LORA channel.
- * The packet is encoded as TNC2 text with the standard LoRa APRS preamble
+ * The packet is encoded as TNC2 text with the standard LoRa APRS header
  * (0x3C 0xFF 0x01) and transmitted via SPI.
  *
  * chan  — Dire Wolf channel number (must be MEDIUM_LORA).
@@ -45,7 +44,7 @@ void loraspi_send_packet (int chan, packet_t pp);
 
 /*
  * loraspi_apply_profile  —  Populate hardware fields in audio_s from a
- * named built-in profile (e.g. "lorapi_rfm95w").
+ * named built-in profile (e.g. "meshadv_400m30s").
  *
  * Called from config.c when the LORAHW directive is parsed.
  * Returns 0 on success, -1 if the profile name is unknown.
