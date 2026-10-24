@@ -148,6 +148,8 @@ typedef struct {
     bool        pa_boost;       /* SX1276: PA_BOOST vs RFO */
     bool        tcxo;
     float       tcxo_voltage;
+    int         rxgain;         /* 0=powersave 1=boosted 2=alternate hourly */
+    int         rxgain_cur;     /* gain currently applied (-1 = not yet) */
     /* Mutex protecting SPI bus — shared by rx_thread and tx_thread */
     pthread_mutex_t spi_lock;
     /* Threads */
@@ -1244,6 +1246,12 @@ static int sx1276_rssi_inst (lora_chan_t *lc) {
     return off + sx1276_read_reg(lc, SX1276_REG_RSSI_VALUE);
 }
 
+/* SX1262 RX gain register: 0x94 = power saving (reset default), 0x96 = boosted */
+static void chip_set_rxgain (lora_chan_t *lc, int boosted) {
+    if (lc->chip == LORA_CHIP_SX1262)
+        sx1262_write_reg(lc, 0x08AC, boosted ? 0x96 : 0x94);
+}
+
 static int chip_rssi_inst (lora_chan_t *lc) {
     if (lc->chip == LORA_CHIP_SX1262) return sx1262_rssi_inst(lc);
     return sx1276_rssi_inst(lc);
@@ -1271,6 +1279,24 @@ static void *rx_thread (void *arg) {
 
         if (nb <= 0 && ++nf_tick >= 100) {
             nf_tick = 0;
+
+            /* Apply RX gain mode (alternate: powersave even UTC hours, boosted odd) */
+            int want = lc->rxgain;
+            if (want == 2) {
+                time_t now = time(NULL);
+                struct tm tmv;
+                gmtime_r(&now, &tmv);
+                want = tmv.tm_hour & 1;
+            }
+            if (want != lc->rxgain_cur && lc->chip == LORA_CHIP_SX1262) {
+                pthread_mutex_lock(&lc->spi_lock);
+                chip_set_rxgain(lc, want);
+                pthread_mutex_unlock(&lc->spi_lock);
+                lc->rxgain_cur = want;
+                text_color_set(DW_COLOR_INFO);
+                dw_printf ("loraspi: ch%d RX gain -> %s\n", lc->chan, want ? "boosted" : "powersave");
+                nf_n = 0; nf_max = -200; nf_pwr = 0.0; nf_start = time(NULL);
+            }
             pthread_mutex_lock(&lc->spi_lock);
             int r = chip_rssi_inst(lc);
             pthread_mutex_unlock(&lc->spi_lock);
@@ -1282,8 +1308,9 @@ static void *rx_thread (void *arg) {
         if (time(NULL) - nf_start >= 60) {
             if (nf_n > 0) {
                 text_color_set(DW_COLOR_INFO);
-                dw_printf ("loraspi: noise floor ch%d: avg %.1f dBm  min %d  max %d  (n=%d)\n",
-                           lc->chan, 10.0 * log10(nf_pwr / nf_n), nf_min, nf_max, nf_n);
+                dw_printf ("loraspi: noise floor ch%d: avg %.1f dBm  min %d  max %d  (n=%d, rxgain=%s)\n",
+                           lc->chan, 10.0 * log10(nf_pwr / nf_n), nf_min, nf_max, nf_n,
+                           lc->rxgain_cur == 1 ? "boosted" : "powersave");
             }
             nf_n = 0; nf_max = -200; nf_pwr = 0.0;
             nf_start = time(NULL);
@@ -1443,6 +1470,8 @@ void loraspi_init (struct audio_s *pa) {
         lc->pa_boost  = pa->lora_pa_boost[chan];
         lc->tcxo      = pa->lora_tcxo[chan];
         lc->tcxo_voltage = pa->lora_tcxo_voltage[chan];
+        lc->rxgain     = pa->lora_rxgain[chan];
+        lc->rxgain_cur = -1;
 
         /* Set up GPIO */
         gpio_setup_out(lc->pin_cs,    1);

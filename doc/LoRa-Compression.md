@@ -52,9 +52,24 @@ for 24 stations in each direction.
     loraspi: ch10 TX primed frame: 21 B instead of 61 B
     loraspi: ch10 compressed frame dropped (24 bytes): no matching reference or damaged (RSSI -90 dBm, SNR 5.0 dB)
 
+## Receiver gain (LORARXGAIN)
+
+An SX1262 receiver can run in a power-saving gain mode (the chip's default) or a boosted one, which is
+about 2 to 3 dB more sensitive at a small cost in current. This is independent of compression; it is in
+this branch because the station used to test it ran with it.
+
+    LORARXGAIN powersave | boosted | alternate
+
+`alternate` uses powersave in even UTC hours and boosted in odd hours, so the two modes can be compared on the
+same station (the noise-floor log line, every 60 s, ends with the mode in use). Place it after `LCHANNEL`.
+Ignored on an SX1276 module. Default: `powersave`.
+
 ## Status
 
-Experimental, tested on a PC only (`ctest` runs `lctest`, which checks known answers from the proposal's test
-vectors and a sender and receiver with a lost frame). The LoRa driver changes have not been run on a Pi or
-over the air. Receivers that do not know the format do not hear compressed senders, so turn `LORACOMPRESS`
-on only where the receivers you care about run this code or the ESP32 firmware.
+Tested on a PC (`ctest` runs `lctest`, which checks known answers from the proposal's test vectors and a
+sender and receiver with a lost frame) and over the air on 24 October 2026: an ESP32 sender to a Pi with an
+SX1262 LoRa HAT, 433.775 MHz, SF12. All 28 compressed and plain test packets decoded to the text that was sent
+(12 average-sized positions: full frames 38 B, primed frames 14 B, against 75 B as plain frames). Not yet tested:
+weak signals with lost frames, two ESP32 units, a mixed network, and transmitting from Direwolf (`LORACOMPRESS`).
+Receivers that do not know the format do not hear compressed senders, so turn `LORACOMPRESS` on only where the
+receivers you care about run this code or the ESP32 firmware.

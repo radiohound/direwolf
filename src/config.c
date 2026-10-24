@@ -1490,6 +1490,7 @@ void config_init (char *fname, struct audio_s *p_audio_config,
 	        p_audio_config->lora_pa_boost[lchan]     = 0;
 	        p_audio_config->lora_tcxo[lchan]         = 0;
 	        p_audio_config->lora_tcxo_voltage[lchan] = 1.8f;
+	        p_audio_config->lora_rxgain[lchan]       = 0;
 	        p_audio_config->lora_spi_bus[lchan]      = 0;
 	        p_audio_config->lora_spi_dev[lchan]      = 0;
 	        p_audio_config->lora_spi_speed[lchan]    = 8000000;
@@ -1623,6 +1624,29 @@ void config_init (char *fname, struct audio_s *p_audio_config,
 	      long sw = strtol(t, NULL, 0);
 	      if (sw >= 0 && sw <= 0xFF) p_audio_config->lora_sw[channel] = (int)sw;
 	      else { text_color_set(DW_COLOR_ERROR); dw_printf ("Line %d: LORASW must be 0x00 to 0xFF.\n", line); }
+	    }
+	  }
+
+/*
+ * LORARXGAIN  powersave | boosted | alternate
+ *	SX1262 RX gain (reg 0x08AC). boosted ~ +2-3 dB sensitivity.
+ *	alternate = powersave on even UTC hours, boosted on odd (A/B test).
+ */
+	  else if (strcasecmp(t, "LORARXGAIN") == 0) {
+	    if (channel < MAX_RADIO_CHANS || p_audio_config->chan_medium[channel] != MEDIUM_LORA) {
+	      text_color_set(DW_COLOR_ERROR);
+	      dw_printf ("Line %d: LORARXGAIN must follow an LCHANNEL directive.\n", line);
+	      continue;
+	    }
+	    t = split(NULL,0);
+	    if (t != NULL) {
+	      if (strcasecmp(t, "boosted") == 0) p_audio_config->lora_rxgain[channel] = 1;
+	      else if (strcasecmp(t, "alternate") == 0) p_audio_config->lora_rxgain[channel] = 2;
+	      else if (strcasecmp(t, "powersave") == 0) p_audio_config->lora_rxgain[channel] = 0;
+	      else {
+	        text_color_set(DW_COLOR_ERROR);
+	        dw_printf ("Line %d: LORARXGAIN must be powersave, boosted, or alternate.\n", line);
+	      }
 	    }
 	  }
 
