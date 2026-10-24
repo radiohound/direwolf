@@ -182,6 +182,7 @@ struct audio_s {
 	float lora_bw_khz[MAX_TOTAL_CHANS];		// Bandwidth: 125, 250, 500 kHz
 	int  lora_cr[MAX_TOTAL_CHANS];			// Coding rate 5-8 (denominator of 4/x)
 	int  lora_sw[MAX_TOTAL_CHANS];			// Sync word (0x12 = LoRa-APRS standard)
+	int  lora_compress_rx[MAX_TOTAL_CHANS];		// APRS-PPM: 1 = expand received compressed frames (default), 0 = ignore them as before
 	int  lora_compress[MAX_TOTAL_CHANS];		// APRS-PPM compression (experimental): 0 = off, 1 = compressed frames, n >= 2 = full frame at least every n-th packet per station, primed frames between
 	int  lora_txpower[MAX_TOTAL_CHANS];		// TX power dBm
 	int  lora_txpower_set[MAX_TOTAL_CHANS];		// 1 if LORATXPOWER was given (else default, quietly capped to hardware limit)

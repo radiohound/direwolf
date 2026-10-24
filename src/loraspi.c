@@ -157,6 +157,7 @@ typedef struct {
     volatile bool running;
     /* APRS-PPM compression (experimental): 0 = off, n = full frame at least every n-th packet per station */
     int            compress_every;
+    int            compress_rx;     /* 1 = expand received compressed frames */
     lorac_store_t  rx_store;
     lorac_store_t  tx_store;
     pthread_mutex_t comp_lock;
@@ -1297,9 +1298,12 @@ static void *rx_thread (void *arg) {
              * Plain frames are also remembered here, as possible references for later primed frames. */
             uint8_t expanded[LORAC_MAX_TEXT + 1];
             int ckind = 0;
-            pthread_mutex_lock(&lc->comp_lock);
-            int cn = lorac_rx(&lc->rx_store, buf, nb, expanded, (int)sizeof(expanded) - 1, &ckind);
-            pthread_mutex_unlock(&lc->comp_lock);
+            int cn = 0;
+            if (lc->compress_rx) {
+                pthread_mutex_lock(&lc->comp_lock);
+                cn = lorac_rx(&lc->rx_store, buf, nb, expanded, (int)sizeof(expanded) - 1, &ckind);
+                pthread_mutex_unlock(&lc->comp_lock);
+            }
             if (cn < 0) {
                 text_color_set(DW_COLOR_ERROR);
                 dw_printf ("loraspi: ch%d compressed frame dropped (%d bytes): no matching reference or damaged  RSSI=%d dBm  SNR=%.1f dB\n",
@@ -1413,6 +1417,7 @@ void loraspi_init (struct audio_s *pa) {
         lc->sw       = pa->lora_sw[chan];
         lc->txpower  = pa->lora_txpower[chan];
         lc->compress_every = pa->lora_compress[chan];
+        lc->compress_rx    = pa->lora_compress_rx[chan];
         lorac_store_init(&lc->rx_store);
         lorac_store_init(&lc->tx_store);
         pthread_mutex_init(&lc->comp_lock, NULL);
