@@ -959,12 +959,17 @@ static bool sx1262_init (lora_chan_t *lc) {
     uint8_t mod_rx[5];
     sx1262_cmd(lc, mod, mod_rx, 5);
 
-    /* Packet params: preamble=8, explicit header, max payload=255, CRC off, IQ normal */
+    /* Packet params: preamble=8, explicit header, max payload=255, CRC on, IQ normal.
+     * The payload CRC is on, as in the common LoRa APRS firmware.  A receiver that
+     * checks the CRC (RadioLib setCRC(true), as in the common ESP32 iGate firmware)
+     * rejects a frame whose header says "no CRC" as a damaged header.  When receiving,
+     * the SX1262 follows the CRC flag in each packet's header, so this does not
+     * change what is accepted. */
     uint8_t pkt[7] = { SX1262_CMD_SET_PACKET_PARAMS,
         0x00, 0x08,   /* preamble = 8 */
         0x00,         /* explicit header */
         0xFF,         /* max payload */
-        0x00,         /* CRC off (LoRa APRS uses AX.25 FCS) */
+        0x01,         /* CRC on */
         0x00 };       /* standard IQ */
     uint8_t pkt_rx[7];
     sx1262_cmd(lc, pkt, pkt_rx, 7);
@@ -1073,9 +1078,9 @@ static bool sx1262_transmit (lora_chan_t *lc, const uint8_t *data, int len) {
     memcpy(wr_cmd + 2, data, len);
     sx1262_cmd(lc, wr_cmd, wr_rx, len + 2);
 
-    /* Packet params: set actual payload length */
+    /* Packet params: set actual payload length; payload CRC on (see sx1262_init) */
     uint8_t pkt[7] = { SX1262_CMD_SET_PACKET_PARAMS,
-        0x00, 0x08, 0x00, (uint8_t)len, 0x00, 0x00 };
+        0x00, 0x08, 0x00, (uint8_t)len, 0x01, 0x00 };
     uint8_t pkt_rx[7];
     sx1262_cmd(lc, pkt, pkt_rx, 7);
 
