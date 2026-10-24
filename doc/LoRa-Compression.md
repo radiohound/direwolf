@@ -50,7 +50,7 @@ for 24 stations in each direction.
     loraspi: ch10 compressed frame: 33 B on air, 61 B as a plain frame
     loraspi: ch10 primed frame: 21 B on air, 61 B as a plain frame
     loraspi: ch10 TX primed frame: 21 B instead of 61 B
-    loraspi: ch10 compressed frame dropped (24 bytes): no matching reference or damaged  RSSI=-90 dBm  SNR=5.0 dB
+    loraspi: ch10 compressed frame dropped (24 bytes): no matching reference or damaged (RSSI -90 dBm, SNR 5.0 dB)
 
 ## Status
 
