@@ -89,6 +89,9 @@ list(APPEND direwolf_SOURCES
   nettnc.c
   sertnc.c
   loraspi.c
+  loracompress.c
+  aprs_ppm.c
+  aprs_ppm_model_v1.c
   serial_port.c
   pfilter.c
   ptt.c

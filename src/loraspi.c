@@ -46,6 +46,7 @@
 #include "ax25_pad.h"
 #include "dlq.h"
 #include "loraspi.h"
+#include "loracompress.h"
 
 /* =========================================================================
  * Compile guard — Linux SPI/GPIO only
@@ -154,6 +155,11 @@ typedef struct {
     pthread_t   tx_thread;
     tx_queue_t  txq;
     volatile bool running;
+    /* APRS-PPM compression (experimental): 0 = off, n = full frame at least every n-th packet per station */
+    int            compress_every;
+    lorac_store_t  rx_store;
+    lorac_store_t  tx_store;
+    pthread_mutex_t comp_lock;
 } lora_chan_t;
 
 #define MAX_LORA_CHANS 4
@@ -1286,7 +1292,28 @@ static void *rx_thread (void *arg) {
             /* Strip LoRa APRS header (0x3C 0xFF 0x01) if present */
             uint8_t *payload = buf;
             int plen = nb;
-            if (plen >= LORA_PREAMBLE_LEN &&
+
+            /* An APRS-PPM compressed frame (3C FF 81 full, 3C FF C1 primed) is expanded to its TNC2 text.
+             * Plain frames are also remembered here, as possible references for later primed frames. */
+            uint8_t expanded[LORAC_MAX_TEXT + 1];
+            int ckind = 0;
+            pthread_mutex_lock(&lc->comp_lock);
+            int cn = lorac_rx(&lc->rx_store, buf, nb, expanded, (int)sizeof(expanded) - 1, &ckind);
+            pthread_mutex_unlock(&lc->comp_lock);
+            if (cn < 0) {
+                text_color_set(DW_COLOR_ERROR);
+                dw_printf ("loraspi: ch%d compressed frame dropped (%d bytes): no matching reference or damaged  RSSI=%d dBm  SNR=%.1f dB\n",
+                           lc->chan, nb, rssi, snr);
+                goto next;
+            }
+            if (cn > 0) {
+                text_color_set(DW_COLOR_INFO);
+                dw_printf ("loraspi: ch%d %s frame: %d B on air, %d B as a plain frame\n",
+                           lc->chan, ckind == LORAC_PRIMED ? "primed" : "compressed", nb, cn + LORA_PREAMBLE_LEN);
+                payload = expanded;
+                plen    = cn;
+            }
+            else if (plen >= LORA_PREAMBLE_LEN &&
                 memcmp(payload, LORA_PREAMBLE, LORA_PREAMBLE_LEN) == 0) {
                 payload += LORA_PREAMBLE_LEN;
                 plen    -= LORA_PREAMBLE_LEN;
@@ -1385,6 +1412,10 @@ void loraspi_init (struct audio_s *pa) {
         lc->cr       = pa->lora_cr[chan];
         lc->sw       = pa->lora_sw[chan];
         lc->txpower  = pa->lora_txpower[chan];
+        lc->compress_every = pa->lora_compress[chan];
+        lorac_store_init(&lc->rx_store);
+        lorac_store_init(&lc->tx_store);
+        pthread_mutex_init(&lc->comp_lock, NULL);
         int max_pwr  = pa->lora_max_txpower[chan];
         if (max_pwr > 0 && lc->txpower > max_pwr) {
             /* Complain only if the user asked for this power; the 20 dBm default just follows the hardware. */
@@ -1470,6 +1501,29 @@ void loraspi_send_packet (int chan, packet_t pp) {
     /* Build wire payload: header + TNC2 */
     uint8_t payload[256];
     int tnc2_len = (int)strlen(tnc2);
+
+    /* APRS-PPM compression, if LORACOMPRESS is set for this channel: the smallest of a primed frame, a
+     * full compressed frame and the plain frame. */
+    if (lc->compress_every > 0 && tnc2_len > 0 && tnc2_len <= LORAC_MAX_TEXT) {
+        uint8_t cframe[256];
+        int ckind = LORAC_PLAIN;
+        pthread_mutex_lock(&lc->comp_lock);
+        int cn = lorac_tx(&lc->tx_store, lc->compress_every, (const uint8_t *)tnc2, tnc2_len,
+                          cframe, (int)sizeof(cframe), &ckind);
+        pthread_mutex_unlock(&lc->comp_lock);
+        if (cn > 0) {
+            if (ckind != LORAC_PLAIN) {
+                text_color_set(DW_COLOR_INFO);
+                dw_printf ("loraspi: ch%d TX %s frame: %d B instead of %d B\n",
+                           lc->chan, ckind == LORAC_PRIMED ? "primed" : "compressed", cn, tnc2_len + LORA_PREAMBLE_LEN);
+            }
+            if (!txq_push(&lc->txq, cframe, cn)) {
+                text_color_set(DW_COLOR_ERROR);
+                dw_printf ("loraspi: TX queue full — packet dropped\n");
+            }
+            return;
+        }
+    }
     int total = LORA_PREAMBLE_LEN + tnc2_len;
     if (total > (int)sizeof(payload)) {
         text_color_set(DW_COLOR_ERROR);

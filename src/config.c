@@ -1478,6 +1478,7 @@ void config_init (char *fname, struct audio_s *p_audio_config,
 	        p_audio_config->lora_cr[lchan]           = 5;
 	        p_audio_config->lora_sw[lchan]           = 0x12;	/* LoRa-APRS sync word */
 	        p_audio_config->lora_txpower[lchan]      = 20;
+	        p_audio_config->lora_compress[lchan]     = 0;
 	        p_audio_config->lora_txpower_set[lchan]  = 0;
 	        p_audio_config->lora_pin_cs[lchan]       = -1;
 	        p_audio_config->lora_pin_reset[lchan]    = -1;
@@ -1639,6 +1640,27 @@ void config_init (char *fname, struct audio_s *p_audio_config,
 	      int dbm = atoi(t);
 	      if (dbm >= 0 && dbm <= 22) { p_audio_config->lora_txpower[channel] = dbm; p_audio_config->lora_txpower_set[channel] = 1; }
 	      else { text_color_set(DW_COLOR_ERROR); dw_printf ("Line %d: LORATXPOWER must be 0 to 22 dBm.\n", line); }
+	    }
+	  }
+
+/*
+ * LORACOMPRESS  n
+ *	Experimental APRS-PPM compression of the frames this channel transmits (receiving compressed
+ *	frames needs no setting).  0 = off (default), 1 = compressed frames, n >= 2 = a full
+ *	compressed frame at least every n-th packet per station with smaller primed frames between.
+ *	Example: LORACOMPRESS 2
+ */
+	  else if (strcasecmp(t, "LORACOMPRESS") == 0) {
+	    if (channel < MAX_RADIO_CHANS || p_audio_config->chan_medium[channel] != MEDIUM_LORA) {
+	      text_color_set(DW_COLOR_ERROR);
+	      dw_printf ("Line %d: LORACOMPRESS must follow an LCHANNEL directive.\n", line);
+	      continue;
+	    }
+	    t = split(NULL,0);
+	    if (t != NULL) {
+	      int n = atoi(t);
+	      if (n >= 0 && n <= 16) p_audio_config->lora_compress[channel] = n;
+	      else { text_color_set(DW_COLOR_ERROR); dw_printf ("Line %d: LORACOMPRESS must be 0 to 16.\n", line); }
 	    }
 	  }
 

@@ -481,6 +481,25 @@ target_link_libraries(il2p_test
   ${MISC_LIBRARIES}
   )
 
+
+# Unit test for APRS-PPM compressed LoRa frames.
+list(APPEND lctest_SOURCES
+  ${CUSTOM_SRC_DIR}/loracompress_test.c
+  ${CUSTOM_SRC_DIR}/loracompress.c
+  ${CUSTOM_SRC_DIR}/aprs_ppm.c
+  ${CUSTOM_SRC_DIR}/aprs_ppm_model_v1.c
+  )
+
+add_executable(lctest
+  ${lctest_SOURCES}
+  )
+
+target_include_directories(lctest PRIVATE ${CUSTOM_SRC_DIR})
+
+target_link_libraries(lctest
+  ${MISC_LIBRARIES}
+  )
+
 # doing ctest on previous programs
 
 add_test(dtest dtest)
@@ -488,6 +507,7 @@ add_test(ttest ttest)
 add_test(tttexttest tttexttest)
 add_test(pftest pftest)
 add_test(tlmtest tlmtest)
+add_test(lctest lctest)
 add_test(lltest lltest)
 add_test(enctest enctest)
 add_test(kisstest kisstest)
