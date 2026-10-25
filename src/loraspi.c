@@ -47,6 +47,7 @@
 #include "dlq.h"
 #include "loraspi.h"
 #include "loracompress.h"
+#include "loraevents.h"
 
 /* =========================================================================
  * Compile guard — Linux SPI/GPIO only
@@ -163,6 +164,15 @@ typedef struct {
     lorac_store_t  rx_store;
     lorac_store_t  tx_store;
     pthread_mutex_t comp_lock;
+
+    /* LORAEVENTS (experimental): one JSON line per event, see loraevents.h */
+    int            events_on;
+    char           station[AX25_MAX_ADDR_LEN];
+    time_t         start_time;
+    long           ev_class[LORAE_NCLASSES];   /* frames received since the last status line, by class */
+    long           ev_dropped;
+    long           ev_parse_failed;
+    long           ev_crc_errors;              /* frames that failed the LoRa CRC since the last status line */
 } lora_chan_t;
 
 #define MAX_LORA_CHANS 4
@@ -746,7 +756,7 @@ static int sx1276_receive (lora_chan_t *lc, uint8_t *buf, int maxlen,
     sx1276_write_reg(lc, SX1276_REG_IRQ_FLAGS, 0xFF);   /* clear all */
 
     if (!(irq & SX1276_IRQ_RX_DONE)) return 0;
-    if   (irq & SX1276_IRQ_CRC_ERR)  return -1;
+    if   (irq & SX1276_IRQ_CRC_ERR)  { lc->ev_crc_errors++; return -1; }
 
     int nb  = sx1276_read_reg(lc, SX1276_REG_RX_NB_BYTES);
     int ptr = sx1276_read_reg(lc, SX1276_REG_FIFO_RX_CURRENT);
@@ -1024,7 +1034,7 @@ static int sx1262_receive (lora_chan_t *lc, uint8_t *buf, int maxlen,
     sx1262_cmd(lc, clr, clr_rx, 3);
 
     if (!(irq & SX1262_IRQ_RX_DONE)) return 0;
-    if   (irq & SX1262_IRQ_CRC_ERR)  return -1;
+    if   (irq & SX1262_IRQ_CRC_ERR)  { lc->ev_crc_errors++; return -1; }
 
     /* Get payload length and buffer offset */
     uint8_t get_buf[4] = { SX1262_CMD_GET_RX_BUFFER_STATUS, 0, 0, 0 };
@@ -1257,6 +1267,28 @@ static int chip_rssi_inst (lora_chan_t *lc) {
     return sx1276_rssi_inst(lc);
 }
 
+/* LORAEVENTS: one line for a frame received.  Counts are kept for the once-a-minute status line. */
+static void events_rx (lora_chan_t *lc, int frame_class, int outcome, int air_bytes, int plain_bytes,
+                       const char *text, size_t text_len, int rssi, double snr) {
+    if (!lc->events_on) return;
+    lc->ev_class[frame_class]++;
+    if (outcome == LORAE_DROPPED_NO_REFERENCE) lc->ev_dropped++;
+    if (outcome == LORAE_PARSE_FAILED)         lc->ev_parse_failed++;
+    lorae_rx_t e;
+    memset(&e, 0, sizeof(e));
+    e.time_ms = lorae_now_ms();   e.sequence = lorae_next_sequence();
+    e.boot_id = lorae_boot_id();  e.station = lc->station;  e.channel = lc->chan;
+    e.freq_hz = (long)(lc->freq_mhz * 1e6 + 0.5);  e.bw_hz = (long)(lc->bw_khz * 1e3 + 0.5);
+    e.sf = lc->sf;  e.cr = lc->cr;
+    e.rssi_dbm = rssi;  e.snr_db = snr;
+    e.frame_class = frame_class;  e.outcome = outcome;
+    e.air_bytes = air_bytes;  e.plain_bytes = plain_bytes;
+    e.tnc2 = text;  e.tnc2_len = text_len;
+    char line[3072];
+    size_t n = lorae_format_rx(line, sizeof(line), &e);
+    if (n > 0) lorae_write(line, n);
+}
+
 static void *rx_thread (void *arg) {
     lora_chan_t *lc = (lora_chan_t *)arg;
     uint8_t buf[256];
@@ -1312,6 +1344,23 @@ static void *rx_thread (void *arg) {
                            lc->chan, 10.0 * log10(nf_pwr / nf_n), nf_min, nf_max, nf_n,
                            lc->rxgain_cur == 1 ? "boosted" : "powersave");
             }
+            if (lc->events_on) {
+                lorae_status_t s;
+                memset(&s, 0, sizeof(s));
+                s.time_ms = lorae_now_ms();  s.sequence = lorae_next_sequence();
+                s.boot_id = lorae_boot_id();  s.station = lc->station;  s.channel = lc->chan;
+                s.uptime_s = (long)(time(NULL) - lc->start_time);
+                s.nf_samples = nf_n;
+                if (nf_n > 0) { s.nf_avg_dbm = 10.0 * log10(nf_pwr / nf_n); s.nf_min_dbm = nf_min; s.nf_max_dbm = nf_max; }
+                s.rx_gain = lc->chip == LORA_CHIP_SX1262 ? (lc->rxgain_cur == 1 ? "boosted" : "powersave") : NULL;
+                for (int i = 0; i < LORAE_NCLASSES; i++) s.class_count[i] = lc->ev_class[i];
+                s.dropped = lc->ev_dropped;  s.parse_failed = lc->ev_parse_failed;  s.crc_errors = lc->ev_crc_errors;
+                char line[1024];
+                size_t n = lorae_format_status(line, sizeof(line), &s);
+                if (n > 0) lorae_write(line, n);
+                memset(lc->ev_class, 0, sizeof(lc->ev_class));
+                lc->ev_dropped = 0;  lc->ev_parse_failed = 0;  lc->ev_crc_errors = 0;
+            }
             nf_n = 0; nf_max = -200; nf_pwr = 0.0;
             nf_start = time(NULL);
         }
@@ -1334,6 +1383,7 @@ static void *rx_thread (void *arg) {
             if (cn < 0) {
                 text_color_set(DW_COLOR_ERROR);
                 /* Not worded as "... RSSI=n dBm  SNR=n dB": scripts that forward the lines of a received packet from the log match that ending. */
+                events_rx(lc, lorae_classify(buf, (size_t)nb), LORAE_DROPPED_NO_REFERENCE, nb, 0, NULL, 0, rssi, snr);
                 dw_printf ("loraspi: ch%d compressed frame dropped (%d bytes): unknown type, no matching reference or damaged (RSSI %d dBm, SNR %.1f dB)\n",
                            lc->chan, nb, rssi, snr);
                 goto next;
@@ -1370,6 +1420,8 @@ static void *rx_thread (void *arg) {
             if (pp == NULL) {
                 text_color_set(DW_COLOR_ERROR);
                 dw_printf ("loraspi: failed to parse: %s  RSSI=%d dBm  SNR=%.1f dB\n", tnc2, rssi, snr);
+                events_rx(lc, lorae_classify(buf, (size_t)nb), LORAE_PARSE_FAILED, nb, cn > 0 ? cn + LORA_PREAMBLE_LEN : nb,
+                          tnc2, strlen(tnc2), rssi, snr);
                 goto next;
             }
 
@@ -1387,6 +1439,8 @@ static void *rx_thread (void *arg) {
 
             text_color_set(DW_COLOR_REC);
             dw_printf ("%s  RSSI=%d dBm  SNR=%.1f dB\n", tnc2, rssi, snr);
+            events_rx(lc, lorae_classify(buf, (size_t)nb), LORAE_OK, nb, cn > 0 ? cn + LORA_PREAMBLE_LEN : nb,
+                      tnc2, strlen(tnc2), rssi, snr);
         }
 
     next:
@@ -1414,6 +1468,18 @@ static void *tx_thread (void *arg) {
 
         text_color_set(ok ? DW_COLOR_XMIT : DW_COLOR_ERROR);
         dw_printf ("loraspi: TX %s (%d bytes)\n", ok ? "OK" : "FAILED", len);
+        if (lc->events_on) {
+            lorae_tx_t t;
+            memset(&t, 0, sizeof(t));
+            t.time_ms = lorae_now_ms();  t.sequence = lorae_next_sequence();
+            t.boot_id = lorae_boot_id();  t.station = lc->station;  t.channel = lc->chan;
+            t.freq_hz = (long)(lc->freq_mhz * 1e6 + 0.5);  t.bw_hz = (long)(lc->bw_khz * 1e3 + 0.5);
+            t.sf = lc->sf;  t.cr = lc->cr;
+            t.frame_class = lorae_classify(data, (size_t)len);  t.air_bytes = len;  t.ok = ok ? 1 : 0;
+            char line[768];
+            size_t n = lorae_format_tx(line, sizeof(line), &t);
+            if (n > 0) lorae_write(line, n);
+        }
     }
     return NULL;
 }
@@ -1446,6 +1512,19 @@ void loraspi_init (struct audio_s *pa) {
         lc->txpower  = pa->lora_txpower[chan];
         lc->compress_every = pa->lora_compress[chan];
         lc->compress_rx    = pa->lora_compress_rx[chan];
+        lc->start_time     = time(NULL);
+        snprintf(lc->station, sizeof(lc->station), "%s", pa->mycall[chan]);
+        if (pa->lora_events_path[chan][0] != '\0') {
+            if (lorae_open(pa->lora_events_path[chan])) {
+                lc->events_on = 1;
+                text_color_set(DW_COLOR_INFO);
+                dw_printf ("loraspi: ch%d writing events to %s\n", chan, pa->lora_events_path[chan]);
+            }
+            else {
+                text_color_set(DW_COLOR_ERROR);
+                dw_printf ("loraspi: ch%d cannot open %s for LORAEVENTS; events are off\n", chan, pa->lora_events_path[chan]);
+            }
+        }
         lorac_store_init(&lc->rx_store);
         lorac_store_init(&lc->tx_store);
         pthread_mutex_init(&lc->comp_lock, NULL);

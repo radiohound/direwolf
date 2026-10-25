@@ -1491,6 +1491,7 @@ void config_init (char *fname, struct audio_s *p_audio_config,
 	        p_audio_config->lora_tcxo[lchan]         = 0;
 	        p_audio_config->lora_tcxo_voltage[lchan] = 1.8f;
 	        p_audio_config->lora_rxgain[lchan]       = 0;
+	        p_audio_config->lora_events_path[lchan][0] = '\0';
 	        p_audio_config->lora_spi_bus[lchan]      = 0;
 	        p_audio_config->lora_spi_dev[lchan]      = 0;
 	        p_audio_config->lora_spi_speed[lchan]    = 8000000;
@@ -1646,6 +1647,30 @@ void config_init (char *fname, struct audio_s *p_audio_config,
 	      else {
 	        text_color_set(DW_COLOR_ERROR);
 	        dw_printf ("Line %d: LORARXGAIN must be powersave, boosted, or alternate.\n", line);
+	      }
+	    }
+	  }
+
+/*
+ * LORAEVENTS  file
+ *	Experimental: append one JSON line per event (a frame received, a frame sent, and a status line
+ *	every minute) to this file, to record what the station hears.  See doc/LoRa-Events.md.  Off by default.
+ *	Example: LORAEVENTS /home/pi/direwolf-events.ndjson
+ */
+	  else if (strcasecmp(t, "LORAEVENTS") == 0) {
+	    if (channel < MAX_RADIO_CHANS || p_audio_config->chan_medium[channel] != MEDIUM_LORA) {
+	      text_color_set(DW_COLOR_ERROR);
+	      dw_printf ("Line %d: LORAEVENTS must follow an LCHANNEL directive.\n", line);
+	      continue;
+	    }
+	    t = split(NULL,0);
+	    if (t != NULL) {
+	      if (strlen(t) < sizeof(p_audio_config->lora_events_path[channel])) {
+	        strlcpy (p_audio_config->lora_events_path[channel], t, sizeof(p_audio_config->lora_events_path[channel]));
+	      }
+	      else {
+	        text_color_set(DW_COLOR_ERROR);
+	        dw_printf ("Line %d: LORAEVENTS file name is too long.\n", line);
 	      }
 	    }
 	  }

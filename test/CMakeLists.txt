@@ -500,6 +500,14 @@ target_link_libraries(lctest
   ${MISC_LIBRARIES}
   )
 
+# Unit test for the LoRa event formatter (LORAEVENTS).
+add_executable(loraevents_test
+  ${CUSTOM_SRC_DIR}/loraevents_test.c
+  ${CUSTOM_SRC_DIR}/loraevents.c
+  )
+
+target_include_directories(loraevents_test PRIVATE ${CUSTOM_SRC_DIR})
+
 # doing ctest on previous programs
 
 add_test(dtest dtest)
@@ -508,6 +516,7 @@ add_test(tttexttest tttexttest)
 add_test(pftest pftest)
 add_test(tlmtest tlmtest)
 add_test(lctest lctest)
+add_test(loraevents_test loraevents_test)
 add_test(lltest lltest)
 add_test(enctest enctest)
 add_test(kisstest kisstest)

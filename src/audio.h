@@ -197,6 +197,7 @@ struct audio_s {
 	int  lora_tcxo[MAX_TOTAL_CHANS];		// 1 = TCXO fitted (SX1262)
 	float lora_tcxo_voltage[MAX_TOTAL_CHANS];	// TCXO supply voltage, e.g. 1.8
 	int  lora_rxgain[MAX_TOTAL_CHANS];		// SX1262 RX gain: 0=powersave 1=boosted 2=alternate hourly
+	char lora_events_path[MAX_TOTAL_CHANS][200];	// LORAEVENTS: file for one JSON line per LoRa event (empty = off)
 	int  lora_spi_bus[MAX_TOTAL_CHANS];		// spidev bus number (default 0)
 	int  lora_spi_dev[MAX_TOTAL_CHANS];		// spidev device number (default 0)
 	int  lora_spi_speed[MAX_TOTAL_CHANS];		// SPI clock Hz (default 8000000)
