@@ -4,6 +4,9 @@ This branch (`feature/lora-compression`) is separate from the LoRa driver pull r
 APRS-PPM compression to the native SPI LoRa channel: smaller frames on the air, and decoding of
 compressed frames from other stations. Nothing here changes how plain LoRa APRS works.
 
+It is shown as an idea that works, not as a request: it is **not** part of pull request #638, and no pull request
+for it will be opened while that one is waiting for review.
+
 ## What it does
 
 * **Receive (always on, no setting).** A frame starting `3C FF 81` (full) or `3C FF C1` (primed) is expanded
