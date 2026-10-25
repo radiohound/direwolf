@@ -1333,7 +1333,7 @@ static void *rx_thread (void *arg) {
             }
             if (cn < 0) {
                 text_color_set(DW_COLOR_ERROR);
-                /* Not worded as "... RSSI=n dBm  SNR=n dB": link9_bridge.py treats any line ending that way as a received packet. */
+                /* Not worded as "... RSSI=n dBm  SNR=n dB": scripts that forward the lines of a received packet from the log match that ending. */
                 dw_printf ("loraspi: ch%d compressed frame dropped (%d bytes): no matching reference or damaged (RSSI %d dBm, SNR %.1f dB)\n",
                            lc->chan, nb, rssi, snr);
                 goto next;
