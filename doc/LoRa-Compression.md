@@ -4,7 +4,7 @@ This branch (`feature/lora-compression`) is separate from the LoRa driver pull r
 APRS-PPM compression to the native SPI LoRa channel: smaller frames on the air, and decoding of
 compressed frames from other stations. Nothing here changes how plain LoRa APRS works.
 
-It is shown as an idea that works, not as a request: it is **not** part of pull request #638, and no pull request
+It is an idea that is showing promise and needs more testing, shared so people can try it, not as a request: it is **not** part of pull request #638, and no pull request
 for it will be opened while that one is waiting for review.
 
 ## What it does
@@ -105,11 +105,12 @@ HAT at 433.775 MHz, SF12, about 2 miles from the other stations:
   frames 25 B and primed frames 8 B against 57 B plain.
 * **Gateway:** a compressed beacon from a T-Deck tracker, received by this build, appeared on APRS-IS as a normal
   packet one second later.
+* **Full day:** a T-Deck beaconing every 15 minutes to a Direwolf iGate about 2 miles away (this code, running as the gateway) had 80 beacons expanded and gated of about 96 sent, with 51% fewer bytes on the air (1,736 B against 3,515 B), and 6 primed frames dropped because their full frame was missed.
 * **Needs the driver's CRC fix.** The first versions of the SX1262 driver transmitted without the LoRa payload CRC;
   ESP32 receivers with an SX127x radio (and the RadioLib CRC check) rejected those frames as "header damaged". The
   fix is in pull request #638 and in this branch.
 
-Not yet tested: weak signals with lost frames on the air, a busy channel (references are kept for 24 stations),
-other boards and spreading factors, and how other firmware reacts to a compressed frame. Receivers that do not know
+Not yet tested: a busy channel (references are kept for 24 stations), a really weak signal, other spreading factors,
+and how other firmware reacts to a compressed frame. (Lost frames have been seen on the air: see the full day above.) Receivers that do not know
 the format do not hear compressed senders, so turn `LORACOMPRESS` on only where the receivers you care about run
 this code or the ESP32 firmware, or where an iGate running it hears you.
