@@ -12,6 +12,11 @@
 #ifndef LORACOMPRESS_H
 #define LORACOMPRESS_H 1
 
+/* Release of the APRS-PPM compression code in this branch. 2.0.0 is the first release: it replaces the unreleased 1.x
+ * builds of 24 to 25 October 2026, whose primed frames (3C FF C1, 6-byte header) are not compatible with this one
+ * (7-byte header with a text check byte). Full and plain frames are the same in both. */
+#define LORAC_RELEASE "2.0.0"
+
 #include <stdint.h>
 
 #define LORAC_ENTRIES 24

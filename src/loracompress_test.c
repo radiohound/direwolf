@@ -145,6 +145,19 @@ int main (void)
 	  }
 	}
 
+	/* a 3C FF frame of a type we do not know must be dropped, and a plain frame must still pass through */
+	{
+	  lorac_store_t rx;
+	  uint8_t native[] = { 0x3C, 0xFF, 0x02, 0x10, 0x20, 0x30, 0x40 }, other_model[] = { 0x3C, 0xFF, 0x82, 0x05, 0x00, 0x00, 0x00 };
+	  uint8_t plain[] = { 0x3C, 0xFF, 0x01, 'N', '0', 'C', 'A', 'L', 'L', '>', 'A', 'P', 'R', 'S', ':', '!' };
+	  uint8_t text[300];
+	  int rk = 0;
+	  lorac_store_init (&rx);
+	  if (lorac_rx (&rx, native, sizeof native, text, sizeof text, &rk) != -1) fail ("an unknown 3C FF type (02) was not dropped", 0);
+	  if (lorac_rx (&rx, other_model, sizeof other_model, text, sizeof text, &rk) != -1) fail ("an unknown model version (82) was not dropped", 0);
+	  if (lorac_rx (&rx, plain, sizeof plain, text, sizeof text, &rk) != 0) fail ("a plain frame did not pass through", 0);
+	}
+
 	printf (errors ? "lctest FAILED, %d errors\n" : "lctest passed\n", errors);
 	return errors ? 1 : 0;
 }

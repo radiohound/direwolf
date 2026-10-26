@@ -1,5 +1,15 @@
 # Compressed LoRa APRS frames (experimental)
 
+> **Breaking change, 26 October 2026: upgrade if you built an earlier version.** After an independent tester showed that a
+> primed frame (`3C FF C1`) could decode to the wrong text when a receiver held a stale reference, the primed header gained
+> a check byte over the whole text (now 7 bytes, was 6). **Builds from before this change are not compatible with builds
+> from after it for primed frames:** each side almost always drops the other's primed frames, and about 1 in 256 could decode
+> to the wrong text, the same weakness the new byte removes. Full frames (`3C FF 81`) and plain frames are unchanged and
+> still work between old and new. **Rebuild and reflash every device that uses this code, all together.** Receivers also
+> now drop any `3C FF` frame of a type they do not know, instead of passing it on as text. Primed frames are one byte
+> bigger, so primed savings are about 2 points lower than quoted before this change.
+> Details and the test results: [known issues](https://github.com/radiohound/aprs-compression-proposal/blob/main/docs/known-issues.md).
+
 This branch (`feature/lora-compression`) is separate from the LoRa driver pull request. It adds
 APRS-PPM compression to the native SPI LoRa channel: smaller frames on the air, and decoding of
 compressed frames from other stations. Nothing here changes how plain LoRa APRS works.
@@ -92,6 +102,15 @@ this branch because the station used to test it ran with it.
 `alternate` uses powersave in even UTC hours and boosted in odd hours, so the two modes can be compared on the
 same station (the noise-floor log line, every 60 s, ends with the mode in use). Place it after `LCHANNEL`.
 Ignored on an SX1276 module. Default: `powersave`.
+
+## Releases
+
+* **2.0.0 (26 October 2026): breaking.** The primed frame (`3C FF C1`) has a 7-byte header, with a text check byte added after
+  an independent tester showed that a primed frame could decode to the wrong text from a stale reference. **It is not
+  compatible with 1.x for primed frames**; full and plain frames are unchanged. Receivers now drop any `3C FF` frame of
+  a type they do not know. Everyone running an earlier build must rebuild and upgrade every device together.
+  The start-up log shows `APRS-PPM compression 2.0.0` per LoRa channel, so you can check what is running.
+* **1.x (24 to 25 October 2026): obsolete.** The first builds, never tagged as a release. Superseded by 2.0.0.
 
 ## Status
 

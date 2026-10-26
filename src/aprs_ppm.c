@@ -226,6 +226,21 @@ uint8_t aprs_ppm_crc8(const uint8_t *p, size_t n)
     return c;
 }
 
+/* Text check: CRC-8, polynomial 0x1D, initial value 0, no reflection, no final xor. A different polynomial from the
+ * reference check on purpose: a stale reference that collides with the real one on poly 0x07 gives a decode that differs
+ * from the real text by a pattern a poly-0x07 CRC cannot see, so reusing 0x07 here would miss many of those. */
+uint8_t aprs_ppm_text_check(const uint8_t *p, size_t n)
+{
+    uint8_t c = 0;
+    size_t i;
+    int b;
+    for (i = 0; i < n; i++) {
+        c ^= p[i];
+        for (b = 0; b < 8; b++) c = (c & 0x80) ? (uint8_t)((c << 1) ^ 0x1D) : (uint8_t)(c << 1);
+    }
+    return c;
+}
+
 uint8_t aprs_ppm_station_id(const uint8_t *text, size_t len)
 {
     size_t n = 0;
@@ -235,7 +250,7 @@ uint8_t aprs_ppm_station_id(const uint8_t *text, size_t len)
 
 int aprs_ppm_is_primed_frame(const uint8_t *f, size_t len)
 {
-    return len >= 6 && f[0] == APRS_PPM_HEADER_0 && f[1] == APRS_PPM_HEADER_1 &&
+    return len >= 7 && f[0] == APRS_PPM_HEADER_0 && f[1] == APRS_PPM_HEADER_1 &&
            f[2] == (uint8_t)(APRS_PPM_VERSION_FLAG | APRS_PPM_PRIMED_FLAG | aprs_ppm_model_version_value);
 }
 
@@ -247,8 +262,8 @@ size_t aprs_ppm_encode_primed(const uint8_t *ref, size_t ref_len, const uint8_t 
     size_t i, frame_len;
 
     if (ref == NULL || ref_len == 0 || ref_len > APRS_PPM_MAX_TEXT) return 0;
-    if (text_len == 0 || text_len > APRS_PPM_MAX_TEXT || frame_cap < 7) return 0;
-    e.out = frame + 6; e.cap = frame_cap - 6; e.n = 0; e.overflow = 0; e.low = 0; e.range = 0xFFFFFFFFu;
+    if (text_len == 0 || text_len > APRS_PPM_MAX_TEXT || frame_cap < 8) return 0;
+    e.out = frame + 7; e.cap = frame_cap - 7; e.n = 0; e.overflow = 0; e.low = 0; e.range = 0xFFFFFFFFu;
     for (i = 0; i < text_len; i++) {
         uint32_t total = build_freq(text, i, freq, ref, ref_len), cum = 0;
         int s;
@@ -257,14 +272,15 @@ size_t aprs_ppm_encode_primed(const uint8_t *ref, size_t ref_len, const uint8_t 
     }
     enc_finish(&e);
     if (e.overflow) return 0;
-    frame_len = 6 + e.n;
+    frame_len = 7 + e.n;
     if (frame_len >= 3 + text_len) return 0;
     frame[0] = APRS_PPM_HEADER_0;
     frame[1] = APRS_PPM_HEADER_1;
     frame[2] = (uint8_t)(APRS_PPM_VERSION_FLAG | APRS_PPM_PRIMED_FLAG | aprs_ppm_model_version_value);
     frame[3] = aprs_ppm_station_id(text, text_len);
     frame[4] = aprs_ppm_crc8(ref, ref_len);
-    frame[5] = (uint8_t)text_len;
+    frame[5] = aprs_ppm_text_check(text, text_len);
+    frame[6] = (uint8_t)text_len;
     return frame_len;
 }
 
@@ -286,9 +302,9 @@ size_t aprs_ppm_decode_primed(const uint8_t *ref, size_t ref_len, const uint8_t 
     if (ref == NULL || ref_len == 0 || ref_len > APRS_PPM_MAX_TEXT) return 0;
     if (!aprs_ppm_is_primed_frame(frame, frame_len)) return 0;
     if (frame[4] != aprs_ppm_crc8(ref, ref_len)) return 0;       /* wrong reference */
-    text_len = frame[5];
+    text_len = frame[6];
     if (text_len == 0 || text_len > text_cap) return 0;
-    dec_init(&d, frame + 6, frame_len - 6);
+    dec_init(&d, frame + 7, frame_len - 7);
     for (i = 0; i < text_len; i++) {
         uint32_t total = build_freq(text, i, freq, ref, ref_len);
         uint32_t v = dec_target(&d, total), cum = 0;
@@ -298,5 +314,6 @@ size_t aprs_ppm_decode_primed(const uint8_t *ref, size_t ref_len, const uint8_t 
         text[i] = (uint8_t)s;
     }
     if (aprs_ppm_station_id(text, text_len) != frame[3]) return 0;   /* decoded to the wrong station */
+    if (aprs_ppm_text_check(text, text_len) != frame[5]) return 0;        /* decoded to the wrong text (wrong reference, cut frame) */
     return text_len;
 }

@@ -109,8 +109,9 @@ int lorac_rx (lorac_store_t *rx, const uint8_t *frame, int len, uint8_t *text, i
 
 	if (len > 3 && frame[2] == 0x01) {			/* plain 3C FF 01 + text: keep it as a possible reference */
 	  store_put (rx, frame + 3, len - 3, 1);
+	  return 0;
 	}
-	return 0;
+	return -1;		/* a 3C FF frame of a type we do not know: drop it, never pass it on as text */
 }
 
 int lorac_tx (lorac_store_t *tx, int full_every, const uint8_t *text, int len, uint8_t *frame, int frame_cap, int *kind)

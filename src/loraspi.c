@@ -1334,7 +1334,7 @@ static void *rx_thread (void *arg) {
             if (cn < 0) {
                 text_color_set(DW_COLOR_ERROR);
                 /* Not worded as "... RSSI=n dBm  SNR=n dB": scripts that forward the lines of a received packet from the log match that ending. */
-                dw_printf ("loraspi: ch%d compressed frame dropped (%d bytes): no matching reference or damaged (RSSI %d dBm, SNR %.1f dB)\n",
+                dw_printf ("loraspi: ch%d compressed frame dropped (%d bytes): unknown type, no matching reference or damaged (RSSI %d dBm, SNR %.1f dB)\n",
                            lc->chan, nb, rssi, snr);
                 goto next;
             }
@@ -1449,6 +1449,9 @@ void loraspi_init (struct audio_s *pa) {
         lorac_store_init(&lc->rx_store);
         lorac_store_init(&lc->tx_store);
         pthread_mutex_init(&lc->comp_lock, NULL);
+        text_color_set(DW_COLOR_INFO);
+        dw_printf ("loraspi: ch%d APRS-PPM compression %s (receive %s, transmit %s); primed frames are not compatible with 1.x builds\n",
+                   chan, LORAC_RELEASE, lc->compress_rx ? "on" : "off", lc->compress_every ? "on" : "off");
         int max_pwr  = pa->lora_max_txpower[chan];
         if (max_pwr > 0 && lc->txpower > max_pwr) {
             /* Complain only if the user asked for this power; the 20 dBm default just follows the hardware. */

@@ -35,12 +35,15 @@ size_t aprs_ppm_encode_frame(const uint8_t *text, size_t text_len, uint8_t *fram
 size_t aprs_ppm_decode_frame(const uint8_t *frame, size_t frame_len, uint8_t *text, size_t text_cap);
 
 /* ---- primed frames (spec 08) ----------------------------------------------------------------
- * On-air: 3C FF (0xC0|version) <station id> <reference check> <length> <coded bytes>.
+ * On-air: 3C FF (0xC0|version) <station id> <reference check> <text check> <length> <coded bytes>.
  * station id      = CRC-8 of the source callsign (the text before the first '>'), so a receiver can find
  *                   the reference it holds for that station without decoding.
  * reference check = CRC-8 of the whole reference text. A receiver whose reference differs drops the frame.
+ * text check      = CRC-8 (polynomial 0x1D) of the whole original text, checked after decoding. A decode that used a reference which
+ *                   only happens to share the 8-bit reference check, or a frame cut short, then fails.
  * The reference is the text of the same station's earlier packet; both ends must hold the same bytes. */
 uint8_t aprs_ppm_crc8(const uint8_t *p, size_t n);
+uint8_t aprs_ppm_text_check(const uint8_t *p, size_t n);   /* CRC-8, polynomial 0x1D (not 0x07), see aprs_ppm.c */
 uint8_t aprs_ppm_station_id(const uint8_t *text, size_t len);
 int     aprs_ppm_is_primed_frame(const uint8_t *frame, size_t len);
 
