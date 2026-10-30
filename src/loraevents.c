@@ -109,7 +109,7 @@ const char *lorae_class_name (int c) {
 }
 
 const char *lorae_outcome_name (int o) {
-    static const char *N[LORAE_NOUTCOMES] = { "ok", "dropped_no_reference", "parse_failed" };
+    static const char *N[LORAE_NOUTCOMES] = { "ok", "dropped_no_reference", "parse_failed", "crc_error" };
     return (o >= 0 && o < LORAE_NOUTCOMES) ? N[o] : "parse_failed";
 }
 
@@ -221,11 +221,19 @@ size_t lorae_format_rx (char *out, size_t cap, const lorae_rx_t *e) {
     sb_t b = { out, cap, 0, 0 };
     if (cap) out[0] = '\0';
     common_head(&b, "rx", e->boot_id, e->sequence, e->time_ms, e->station, e->channel);
-    sb_put(&b, ",\"reception\":{\"crc_valid\":true,");
+    sb_printf(&b, ",\"reception\":{\"crc_valid\":%s,", e->outcome == LORAE_CRC_ERROR ? "false" : "true");
     radio_block(&b, e->freq_hz, e->bw_hz, e->sf, e->cr);
-    sb_printf(&b, ",\"local\":{\"rssi_dbm\":%d,\"snr_db\":%.1f}}", e->rssi_dbm, e->snr_db);
-    sb_printf(&b, ",\"frame\":{\"class\":\"%s\",\"air_bytes\":%d,\"plain_bytes\":%d,\"outcome\":\"%s\"}",
+    sb_printf(&b, ",\"local\":{\"rssi_dbm\":%d,\"snr_db\":%.1f", e->rssi_dbm, e->snr_db);
+    if (e->fo_known) sb_printf(&b, ",\"freq_error_hz\":%.0f", e->fo_hz);
+    sb_put(&b, "}}");
+    sb_printf(&b, ",\"frame\":{\"class\":\"%s\",\"air_bytes\":%d,\"plain_bytes\":%d,\"outcome\":\"%s\"",
               lorae_class_name(e->frame_class), e->air_bytes, e->plain_bytes, lorae_outcome_name(e->outcome));
+    if (e->outcome == LORAE_CRC_ERROR && e->raw && e->raw_len > 0) {
+        sb_put(&b, ",\"raw_hex\":\"");
+        for (size_t i = 0; i < e->raw_len; i++) sb_printf(&b, "%02x", e->raw[i]);
+        sb_put(&b, "\"");
+    }
+    sb_put(&b, "}");
 
     if (e->tnc2 && e->tnc2_len > 0) {
         sb_put(&b, ",\"packet\":{\"raw_tnc2_base64\":");

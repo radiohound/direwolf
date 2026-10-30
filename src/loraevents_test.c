@@ -60,6 +60,29 @@ int main (int argc, char **argv) {
     expect("too short", lorae_classify(shortf, sizeof shortf) == LORAE_UNKNOWN);
     expect("names", strcmp(lorae_class_name(LORAE_PPM_FULL), "ppm_full") == 0 && strcmp(lorae_outcome_name(LORAE_DROPPED_NO_REFERENCE), "dropped_no_reference") == 0);
 
+    /* a frame whose CRC failed keeps its bytes, and a good frame can carry the frequency error */
+    {
+        const uint8_t bad[] = { 0x3C, 0xFF, 0x81, 0x00, 0xAB };
+        lorae_rx_t e = rx(NULL, 0, LORAE_PPM_FULL, LORAE_CRC_ERROR);
+        e.raw = bad;  e.raw_len = sizeof bad;  e.fo_known = 1;  e.fo_hz = -614.4;
+        expect("crc outcome name", strcmp(lorae_outcome_name(LORAE_CRC_ERROR), "crc_error") == 0);
+        expect("crc line", lorae_format_rx(line, sizeof line, &e) > 0);
+        expect_in(line, "\"crc_valid\":false");
+        expect_in(line, "\"freq_error_hz\":-614");
+        expect_in(line, "\"raw_hex\":\"3cff8100ab\"");
+        expect_in(line, "\"outcome\":\"crc_error\"");
+        expect_in(line, "\"packet\":null");
+        lorae_rx_t g = rx(NULL, 0, LORAE_PLAIN, LORAE_OK);
+        lorae_format_rx(line, sizeof line, &g);
+        expect_in(line, "\"crc_valid\":true");
+        expect_not_in(line, "freq_error_hz");
+        expect_not_in(line, "raw_hex");
+        g.fo_known = 1;  g.fo_hz = 365.2;
+        lorae_format_rx(line, sizeof line, &g);
+        expect_in(line, "\"freq_error_hz\":365");
+        expect_not_in(line, "raw_hex");
+    }
+
     /* who transmitted */
     char who[16];  int direct, hops;
     const char *t1 = "K6ATV-4>APLRT1,WIDE1-1:=/abc";

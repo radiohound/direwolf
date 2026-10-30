@@ -33,6 +33,7 @@ enum {
     LORAE_OK = 0,
     LORAE_DROPPED_NO_REFERENCE,
     LORAE_PARSE_FAILED,
+    LORAE_CRC_ERROR,      /* the radio's CRC failed: the bytes are kept as heard, nothing is decoded */
     LORAE_NOUTCOMES
 };
 
@@ -54,6 +55,10 @@ typedef struct {
     int         plain_bytes;      /* length the plain frame would have (text + 3), 0 if unknown */
     const char *tnc2;             /* the packet text without the 3-byte header, or NULL */
     size_t      tnc2_len;
+    int         fo_known;         /* 1 if the radio's frequency-error reading is in fo_hz */
+    double      fo_hz;            /* transmitter offset as the radio measured it (RadioLib sign convention) */
+    const uint8_t *raw;           /* the bytes as received, kept only for outcome LORAE_CRC_ERROR, else NULL */
+    size_t      raw_len;
 } lorae_rx_t;
 
 typedef struct {

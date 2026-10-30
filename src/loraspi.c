@@ -176,6 +176,16 @@ typedef struct {
     long           ev_dropped;
     long           ev_parse_failed;
     long           ev_crc_errors;              /* frames that failed the LoRa CRC since the last status line */
+    /* What the last chip_receive saw, for the events log (touched by the receive thread only). */
+    int            rx_fo_known;                /* frequency error of the last frame read (SX1262 only) */
+    double         rx_fo_hz;
+    uint8_t        bad_buf[128];               /* a frame that failed the CRC, kept as heard */
+    int            bad_len;                    /* 0 = none waiting */
+    int            bad_rssi;
+    float          bad_snr;
+    time_t         bad_window;                 /* rate limit: at most EV_BAD_PER_MIN broken frames logged per minute */
+    int            bad_in_window;
+    long           bad_suppressed;
 } lora_chan_t;
 
 #define MAX_LORA_CHANS 4
@@ -1037,7 +1047,9 @@ static int sx1262_receive (lora_chan_t *lc, uint8_t *buf, int maxlen,
     sx1262_cmd(lc, clr, clr_rx, 3);
 
     if (!(irq & SX1262_IRQ_RX_DONE)) return 0;
-    if   (irq & SX1262_IRQ_CRC_ERR)  { lc->ev_crc_errors++; return -1; }
+    int crc_bad = (irq & SX1262_IRQ_CRC_ERR) != 0;
+    if (crc_bad) lc->ev_crc_errors++;
+    lc->rx_fo_known = 0;
 
     /* Get payload length and buffer offset */
     uint8_t get_buf[4] = { SX1262_CMD_GET_RX_BUFFER_STATUS, 0, 0, 0 };
@@ -1076,6 +1088,22 @@ static int sx1262_receive (lora_chan_t *lc, uint8_t *buf, int maxlen,
     *rssi_out = -(ps_rx[2] / 2);
     *snr_out  = (int8_t)ps_rx[3] / 4.0f;
 
+    /* Frequency error of this frame: register 0x076B, 20 bits, two's complement, 0.121 Hz per step at 125 kHz
+     * (RadioLib's getFrequencyError: raw * bandwidth * 155 / 160000000).  Positive = transmitter above our frequency. */
+    uint8_t fo_cmd[7] = { SX1262_CMD_READ_REGISTER, 0x07, 0x6B, 0x00, 0, 0, 0 };
+    uint8_t fo_rx[7];
+    sx1262_cmd(lc, fo_cmd, fo_rx, 7);
+    int32_t fo_raw = ((int32_t)(fo_rx[4] & 0x0F) << 16) | ((int32_t)fo_rx[5] << 8) | fo_rx[6];
+    if (fo_raw & 0x80000) fo_raw -= 0x100000;
+    lc->rx_fo_hz    = fo_raw * (lc->bw_khz * 1000.0) * 155.0 / 160000000.0;
+    lc->rx_fo_known = 1;
+
+    if (crc_bad) {
+        /* The bytes are not trustworthy, but they are what the radio heard: keep them for the events log only. */
+        memcpy(lc->bad_buf, buf, nb);
+        lc->bad_len = nb;  lc->bad_rssi = *rssi_out;  lc->bad_snr = *snr_out;
+        return -1;
+    }
     return nb;
 }
 
@@ -1287,9 +1315,44 @@ static void events_rx (lora_chan_t *lc, int frame_class, int outcome, int air_by
     e.frame_class = frame_class;  e.outcome = outcome;
     e.air_bytes = air_bytes;  e.plain_bytes = plain_bytes;
     e.tnc2 = text;  e.tnc2_len = text_len;
+    e.fo_known = lc->rx_fo_known;  e.fo_hz = lc->rx_fo_hz;
     char line[3072];
     size_t n = lorae_format_rx(line, sizeof(line), &e);
     if (n > 0) lorae_write(line, n);
+}
+
+/* LORAEVENTS: a frame the radio heard but whose CRC failed.  Kept as raw bytes, never decoded.  At most
+ * EV_BAD_PER_MIN a minute are written, so a burst of collisions cannot flood the log; the count of those left out
+ * goes to the console. */
+#define EV_BAD_PER_MIN 30
+static void events_bad (lora_chan_t *lc) {
+    int n = lc->bad_len;
+    lc->bad_len = 0;
+    if (!lc->events_on || n <= 0) return;
+    time_t now = time(NULL);
+    if (now - lc->bad_window >= 60) {
+        if (lc->bad_suppressed > 0) {
+            text_color_set(DW_COLOR_INFO);
+            dw_printf ("loraspi: ch%d %ld broken frames not logged (limit %d a minute)\n", lc->chan, lc->bad_suppressed, EV_BAD_PER_MIN);
+        }
+        lc->bad_window = now;  lc->bad_in_window = 0;  lc->bad_suppressed = 0;
+    }
+    if (lc->bad_in_window >= EV_BAD_PER_MIN) { lc->bad_suppressed++; return; }
+    lc->bad_in_window++;
+    lorae_rx_t e;
+    memset(&e, 0, sizeof(e));
+    e.time_ms = lorae_now_ms();   e.sequence = lorae_next_sequence();
+    e.boot_id = lorae_boot_id();  e.station = lc->station;  e.channel = lc->chan;
+    e.freq_hz = (long)(lc->freq_mhz * 1e6 + 0.5);  e.bw_hz = (long)(lc->bw_khz * 1e3 + 0.5);
+    e.sf = lc->sf;  e.cr = lc->cr;
+    e.rssi_dbm = lc->bad_rssi;  e.snr_db = lc->bad_snr;
+    e.frame_class = lorae_classify(lc->bad_buf, (size_t)n);  e.outcome = LORAE_CRC_ERROR;
+    e.air_bytes = n;  e.plain_bytes = 0;
+    e.fo_known = lc->rx_fo_known;  e.fo_hz = lc->rx_fo_hz;
+    e.raw = lc->bad_buf;  e.raw_len = (size_t)n;
+    char line[1024];
+    size_t len = lorae_format_rx(line, sizeof(line), &e);
+    if (len > 0) lorae_write(line, len);
 }
 
 static void *rx_thread (void *arg) {
@@ -1311,6 +1374,7 @@ static void *rx_thread (void *arg) {
         pthread_mutex_lock(&lc->spi_lock);
         int nb = chip_receive(lc, buf, sizeof(buf), &rssi, &snr);
         pthread_mutex_unlock(&lc->spi_lock);
+        if (lc->bad_len > 0) events_bad(lc);
 
         if (nb <= 0 && ++nf_tick >= 100) {
             nf_tick = 0;

@@ -40,7 +40,10 @@ that stream can read these lines. The `frame` block and `heard_from` are additio
   `native` (`3C FF 02` kinds 0 and 1; this build does not decode it, so it appears as `parse_failed`), `hybrid` (`3C FF 02` kinds 2 and 3, decoded when `LORAHYBRIDRX` is on; added after schema 0.1 was first written, as a new name that older readers can ignore), or `unknown`.
 * `frame.air_bytes` and `plain_bytes`: the size on the air, and what the plain frame would have been.
 * `frame.outcome`: `ok`, `dropped_no_reference` (a primed frame whose reference was not heard; no `packet`), or
-  `parse_failed`.
+  `parse_failed`, or `crc_error` (see below).
+* `reception.local.freq_error_hz`: the transmitter's offset from our frequency as the SX1262 measured it for this
+  frame (RadioLib's sign convention: positive = the transmitter is above us). Absent on the SX1276. About 0.12 Hz per
+  step at 125 kHz.
 * `packet.tnc2`: the text, one character per byte (bytes of 0x7F and above and control bytes are written as `\u00XX`);
   `raw_tnc2_base64` is the same bytes exactly.
 * `heard_from`: the station that actually transmitted the frame. The source if no digipeater has handled it
@@ -63,8 +66,10 @@ many frames of each class were received, how many compressed frames were dropped
 
 * One file per Direwolf run, with a `boot_id` and a `sequence` number so that a reader can spot gaps.
 * The clock is the Pi's; keep it on NTP.
-* No frequency error is recorded: the SX1262 driver does not read it.
-* Frames that fail the LoRa CRC are not passed up by the driver, so they have no line of their own; they are counted
-  in each `status` line (`crc_errors`), which is a good sign of collisions and weak signals.
+* Frames that fail the LoRa CRC are counted in each `status` line (`crc_errors`) and, on the SX1262, also get an
+  `rx` line of their own: `reception.crc_valid` is `false`, `frame.outcome` is `crc_error`, `packet` is `null`, and
+  `frame.raw_hex` holds the bytes exactly as the radio heard them (they are damaged, so nothing is decoded and the
+  class is only a guess from the first bytes). At most 30 such lines are written a minute; the rest are counted in
+  `crc_errors` and reported on the console. Readers that count receptions should leave `crc_error` lines out.
 * The recording holds other people's callsigns and positions, as the radio did. Keep it private, and do not publish it
   without removing what the senders did not agree to share.
