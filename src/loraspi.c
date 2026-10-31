@@ -138,7 +138,7 @@ typedef struct {
     int         pin_tx_en;
     int         pin_rx_en;
     /* RF config */
-    float       freq_mhz;
+    double      freq_mhz;
     int         sf;
     float       bw_khz;
     int         cr;             /* coding rate denominator: 5..8 */
@@ -646,7 +646,7 @@ static bool sx1276_init (lora_chan_t *lc) {
     usleep(10000);
 
     /* Set frequency */
-    uint64_t frf = (uint64_t)((double)lc->freq_mhz * 1e6 / 32e6 * (double)(1ULL << 19));
+    uint64_t frf = (uint64_t)(lc->freq_mhz * 1e6 / 32e6 * (double)(1ULL << 19) + 0.5);        /* rounded, not cut off */
     sx1276_write_reg(lc, SX1276_REG_FRF_MSB, (frf >> 16) & 0xFF);
     sx1276_write_reg(lc, SX1276_REG_FRF_MID, (frf >>  8) & 0xFF);
     sx1276_write_reg(lc, SX1276_REG_FRF_LSB,  frf        & 0xFF);
@@ -722,7 +722,7 @@ static bool sx1276_init (lora_chan_t *lc) {
                          ((uint32_t)sx1276_read_reg(lc, SX1276_REG_FRF_MID) <<  8) |
                           (uint32_t)sx1276_read_reg(lc, SX1276_REG_FRF_LSB);
     double freq_actual = (double)frf_check * 32e6 / (double)(1ULL << 19);
-    if (fabs(freq_actual - (double)lc->freq_mhz * 1e6) > 1000.0) {
+    if (fabs(freq_actual - lc->freq_mhz * 1e6) > 1000.0) {
         text_color_set(DW_COLOR_ERROR);
         dw_printf ("loraspi ch%d: WARNING frequency mismatch — config %.3f MHz, chip %.3f MHz\n",
                    lc->chan, lc->freq_mhz, freq_actual / 1e6);
@@ -919,7 +919,7 @@ static bool sx1262_init (lora_chan_t *lc) {
     sx1262_cmd(lc, pt, pt_rx, 2);
 
     /* RF frequency */
-    uint32_t frf = (uint32_t)((double)lc->freq_mhz * 1e6 / 0.95367431640625);
+    uint32_t frf = (uint32_t)(lc->freq_mhz * 1e6 / 0.95367431640625 + 0.5);                  /* rounded, not cut off: 32 MHz / 2^25 per step */
     uint8_t freq_cmd[5] = { SX1262_CMD_SET_RF_FREQUENCY,
         (frf >> 24) & 0xFF, (frf >> 16) & 0xFF,
         (frf >>  8) & 0xFF,  frf        & 0xFF };

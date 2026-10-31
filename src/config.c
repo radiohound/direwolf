@@ -1472,7 +1472,7 @@ void config_init (char *fname, struct audio_s *p_audio_config,
 	      if (p_audio_config->chan_medium[lchan] == MEDIUM_NONE) {
 	        p_audio_config->chan_medium[lchan] = MEDIUM_LORA;
 	        /* Set defaults */
-	        p_audio_config->lora_freq_mhz[lchan]    = 433.775f;	/* LoRa APRS standard */
+	        p_audio_config->lora_freq_mhz[lchan]    = 433.775;	/* LoRa APRS standard */
 	        p_audio_config->lora_sf[lchan]           = 12;
 	        p_audio_config->lora_bw_khz[lchan]       = 125.0f;
 	        p_audio_config->lora_cr[lchan]           = 5;
@@ -1546,8 +1546,8 @@ void config_init (char *fname, struct audio_s *p_audio_config,
 	    }
 	    t = split(NULL,0);
 	    if (t != NULL) {
-	      float f = (float)atof(t);
-	      if (f >= 137.0f && f <= 1020.0f) p_audio_config->lora_freq_mhz[channel] = f;
+	      double f = atof(t);
+	      if (f >= 137.0 && f <= 1020.0) p_audio_config->lora_freq_mhz[channel] = f;
 	      else { text_color_set(DW_COLOR_ERROR); dw_printf ("Line %d: LORAFREQ must be 137 to 1020 MHz.\n", line); }
 	    }
 	  }

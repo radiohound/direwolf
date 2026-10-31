@@ -177,7 +177,7 @@ struct audio_s {
 	// Applies only to native SPI LoRa channels (MEDIUM_LORA).
 
 	int  lora_chip[MAX_TOTAL_CHANS];		// LORA_CHIP_SX1276 or LORA_CHIP_SX1262 (from loraspi.h)
-	float lora_freq_mhz[MAX_TOTAL_CHANS];		// Centre frequency, e.g. 915.0
+	double lora_freq_mhz[MAX_TOTAL_CHANS];		// Centre frequency, e.g. 915.0.  A double: a float holds 433.775 as 433.774994, which tunes the radio 6 Hz low.
 	int  lora_sf[MAX_TOTAL_CHANS];			// Spreading factor 7-12
 	float lora_bw_khz[MAX_TOTAL_CHANS];		// Bandwidth: 125, 250, 500 kHz
 	int  lora_cr[MAX_TOTAL_CHANS];			// Coding rate 5-8 (denominator of 4/x)
