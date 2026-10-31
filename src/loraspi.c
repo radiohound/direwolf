@@ -984,8 +984,11 @@ static bool sx1262_init (lora_chan_t *lc) {
     sx1262_write_reg(lc, 0x0740, sw_hi);
     sx1262_write_reg(lc, 0x0741, sw_lo);
 
-    /* Buffer base addresses: TX=0x00, RX=0x80 (separate halves to prevent overlap) */
-    uint8_t buf_base[3] = { SX1262_CMD_SET_BUFFER_BASE_ADDR, 0x00, 0x80 };
+    /* Buffer base addresses: TX=0x00, RX=0x00.  The radio is half duplex and the TX buffer is written before every send, so TX and RX can
+     * share the whole 256 byte buffer.  With RX at 0x80 a received frame was limited to 128 bytes (a longer one would wrap into the TX area),
+     * but LoRa APRS frames of 130 to 250 bytes are common (weather beacons, long comments, objects).  A LoRa payload is at most 255 bytes,
+     * so from 0x00 it never wraps. */
+    uint8_t buf_base[3] = { SX1262_CMD_SET_BUFFER_BASE_ADDR, 0x00, 0x00 };
     uint8_t buf_rx[3];
     sx1262_cmd(lc, buf_base, buf_rx, 3);
 
@@ -1025,15 +1028,7 @@ static int sx1262_receive (lora_chan_t *lc, uint8_t *buf, int maxlen,
     /* buf_rx[0]=status, [1]=status(echo), [2]=payloadLength, [3]=rxStartBufferPointer */
     int nb     = buf_rx[2];
     int offset = buf_rx[3];
-    if (nb <= 0 || nb > maxlen) return -1;
-    /* RX base is 0x80; a packet longer than 128 bytes would wrap the circular
-     * buffer into the TX region (0x00), concatenating TX data into the read.
-     * Discard — LoRa APRS packets are always well under 128 bytes. */
-    if (nb > 128) {
-        text_color_set(DW_COLOR_ERROR);
-        dw_printf ("loraspi: RX packet too large (%d bytes) — discarding\n", nb);
-        return -1;
-    }
+    if (nb <= 0 || nb > maxlen) return -1;       /* RX base is 0x00 (sx1262_init), so even a 255 byte frame sits in the buffer without wrapping */
 
     /* Read buffer (fixed max 256 bytes payload) */
     uint8_t rd_cmd[256 + 3];
@@ -1058,7 +1053,7 @@ static int sx1262_receive (lora_chan_t *lc, uint8_t *buf, int maxlen,
 }
 
 static bool sx1262_transmit (lora_chan_t *lc, const uint8_t *data, int len) {
-    if (len > 256) return false;
+    if (len > 255) return false;                 /* the payload length register is one byte */
 
     /* Go to STBY_RC before TX */
     uint8_t stby[2] = { SX1262_CMD_SET_STANDBY, 0x00 };   /* STBY_RC */
@@ -1163,6 +1158,12 @@ static void sx1262_start_rx (lora_chan_t *lc) {
     /* Enable RX path, disable TX path */
     if (lc->pin_tx_en >= 0) gpio_write(lc->pin_tx_en, 0);
     if (lc->pin_rx_en >= 0) gpio_write(lc->pin_rx_en, 1);
+
+    /* sx1262_transmit sets the payload length to the length of the frame it sent, and in receive mode that field is the largest payload the
+     * receiver accepts.  Put it back to 255 (the same parameters as sx1262_init) so a longer frame is not refused after a transmit. */
+    uint8_t pkt[7] = { SX1262_CMD_SET_PACKET_PARAMS, 0x00, 0x08, 0x00, 0xFF, 0x01, 0x00 };
+    uint8_t pkt_rx[7];
+    sx1262_cmd(lc, pkt, pkt_rx, 7);
 
     uint8_t clr[3] = { SX1262_CMD_CLR_IRQ_STATUS, 0xFF, 0xFF };
     uint8_t clr_rx[3];
