@@ -14,3 +14,8 @@ Directives (apply to the LoRa channel above them in direwolf.conf; defaults in b
   LORAHYBRIDRX 1|0 [1]   decode received hybrid frames
   LORAHYBRID   0|1 [0]   transmit hybrid frames when the packet can be encoded
 Hybrid frames heard:  journalctl -u direwolf-chase --since '-1 hour' -a | grep -a 'hybrid frame'
+
+Hybrid TRANSMIT test from the hill (optional; off after install). While it is on, stations running stock firmware do not hear K6ATV-10:
+  cd ~/direwolf-hybrid && git pull && bash scripts/hill-hybrid/tx-on.sh      (adds LORAHYBRID 1 under the LoRa channel, backs up the config, restarts; asks yes)
+  journalctl -u direwolf-chase --since '-30 min' -a | grep -a 'TX hybrid frame'
+  bash ~/direwolf-hybrid/scripts/hill-hybrid/tx-off.sh                       (removes it again; receive stays on)
