@@ -96,7 +96,7 @@ int lorae_classify (const uint8_t *frame, size_t len) {
             case 0x01: return LORAE_PLAIN;
             case 0x81: return LORAE_PPM_FULL;
             case 0xC1: return LORAE_PPM_PRIMED;
-            case 0x02: return LORAE_NATIVE;
+            case 0x02: return (len >= 4 && (frame[3] & 3) >= 2) ? LORAE_HYBRID : LORAE_NATIVE;
             default:   break;
         }
     }
@@ -104,7 +104,7 @@ int lorae_classify (const uint8_t *frame, size_t len) {
 }
 
 const char *lorae_class_name (int c) {
-    static const char *N[LORAE_NCLASSES] = { "plain", "ppm_full", "ppm_primed", "native", "unknown" };
+    static const char *N[LORAE_NCLASSES] = { "plain", "ppm_full", "ppm_primed", "native", "unknown", "hybrid" };
     return (c >= 0 && c < LORAE_NCLASSES) ? N[c] : "unknown";
 }
 

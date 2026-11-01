@@ -48,6 +48,7 @@
 #include "loraspi.h"
 #include "loracompress.h"
 #include "loraevents.h"
+#include "lorahybrid.h"
 
 /* =========================================================================
  * Compile guard — Linux SPI/GPIO only
@@ -161,6 +162,8 @@ typedef struct {
     /* APRS-PPM compression (experimental): 0 = off, n = full frame at least every n-th packet per station */
     int            compress_every;
     int            compress_rx;     /* 1 = expand received compressed frames */
+    int            hybrid_tx;       /* 1 = send hybrid frames (3C FF 02, spec 11) when the packet can be encoded */
+    int            hybrid_rx;       /* 1 = decode received hybrid frames */
     lorac_store_t  rx_store;
     lorac_store_t  tx_store;
     pthread_mutex_t comp_lock;
@@ -1375,7 +1378,28 @@ static void *rx_thread (void *arg) {
             uint8_t expanded[LORAC_MAX_TEXT + 1];
             int ckind = 0;
             int cn = 0;
-            if (lc->compress_rx) {
+
+            /* A hybrid frame (3C FF 02, kind 2 or 3; spec 11) is decoded by the receiver rules of the spec to its TNC2 text.
+             * The RXT block it may carry cannot be held by the AX.25 packet object and is dropped. */
+            char hybrid_text[LORAH_MAX_TEXT + 1];
+            int hn = 0;
+            if (lc->hybrid_rx && lorah_is_hybrid(buf, nb)) {
+                int tuples = 0;
+                hn = lorah_decode(buf, nb, hybrid_text, (int)sizeof(hybrid_text), &tuples);
+                if (hn <= 0) {
+                    text_color_set(DW_COLOR_ERROR);
+                    events_rx(lc, lorae_classify(buf, (size_t)nb), LORAE_PARSE_FAILED, nb, 0, NULL, 0, rssi, snr);
+                    dw_printf ("loraspi: ch%d hybrid frame dropped (%d bytes): %s (RSSI %d dBm, SNR %.1f dB)\n",
+                               lc->chan, nb, lorah_reason(hn), rssi, snr);
+                    goto next;
+                }
+                text_color_set(DW_COLOR_INFO);
+                dw_printf ("loraspi: ch%d hybrid frame: %d B on air, %d B as a plain frame%s\n",
+                           lc->chan, nb, hn + LORA_PREAMBLE_LEN, tuples > 0 ? " (RXT block not carried on)" : "");
+                payload = (uint8_t *)hybrid_text;
+                plen    = hn;
+            }
+            if (lc->compress_rx && hn == 0) {
                 pthread_mutex_lock(&lc->comp_lock);
                 cn = lorac_rx(&lc->rx_store, buf, nb, expanded, (int)sizeof(expanded) - 1, &ckind);
                 pthread_mutex_unlock(&lc->comp_lock);
@@ -1395,7 +1419,7 @@ static void *rx_thread (void *arg) {
                 payload = expanded;
                 plen    = cn;
             }
-            else if (plen >= LORA_PREAMBLE_LEN &&
+            else if (hn == 0 && plen >= LORA_PREAMBLE_LEN &&
                 memcmp(payload, LORA_PREAMBLE, LORA_PREAMBLE_LEN) == 0) {
                 payload += LORA_PREAMBLE_LEN;
                 plen    -= LORA_PREAMBLE_LEN;
@@ -1403,7 +1427,7 @@ static void *rx_thread (void *arg) {
             if (plen <= 0) goto next;
 
             /* Null-terminate and convert to TNC2 string */
-            char tnc2[256];
+            char tnc2[LORAH_MAX_TEXT + 1];
             if (plen >= (int)sizeof(tnc2)) plen = (int)sizeof(tnc2) - 1;
             memcpy(tnc2, payload, plen);
             tnc2[plen] = '\0';
@@ -1420,7 +1444,7 @@ static void *rx_thread (void *arg) {
             if (pp == NULL) {
                 text_color_set(DW_COLOR_ERROR);
                 dw_printf ("loraspi: failed to parse: %s  RSSI=%d dBm  SNR=%.1f dB\n", tnc2, rssi, snr);
-                events_rx(lc, lorae_classify(buf, (size_t)nb), LORAE_PARSE_FAILED, nb, cn > 0 ? cn + LORA_PREAMBLE_LEN : nb,
+                events_rx(lc, lorae_classify(buf, (size_t)nb), LORAE_PARSE_FAILED, nb, cn > 0 ? cn + LORA_PREAMBLE_LEN : hn > 0 ? hn + LORA_PREAMBLE_LEN : nb,
                           tnc2, strlen(tnc2), rssi, snr);
                 goto next;
             }
@@ -1439,7 +1463,7 @@ static void *rx_thread (void *arg) {
 
             text_color_set(DW_COLOR_REC);
             dw_printf ("%s  RSSI=%d dBm  SNR=%.1f dB\n", tnc2, rssi, snr);
-            events_rx(lc, lorae_classify(buf, (size_t)nb), LORAE_OK, nb, cn > 0 ? cn + LORA_PREAMBLE_LEN : nb,
+            events_rx(lc, lorae_classify(buf, (size_t)nb), LORAE_OK, nb, cn > 0 ? cn + LORA_PREAMBLE_LEN : hn > 0 ? hn + LORA_PREAMBLE_LEN : nb,
                       tnc2, strlen(tnc2), rssi, snr);
         }
 
@@ -1512,6 +1536,13 @@ void loraspi_init (struct audio_s *pa) {
         lc->txpower  = pa->lora_txpower[chan];
         lc->compress_every = pa->lora_compress[chan];
         lc->compress_rx    = pa->lora_compress_rx[chan];
+        lc->hybrid_tx      = pa->lora_hybrid[chan];
+        lc->hybrid_rx      = pa->lora_hybrid_rx[chan];
+        if ((lc->hybrid_tx || lc->hybrid_rx) && !lorah_init()) {
+            text_color_set(DW_COLOR_ERROR);
+            dw_printf ("loraspi: ch%d hybrid frames: destination list failed to load; they are off\n", chan);
+            lc->hybrid_tx = 0;  lc->hybrid_rx = 0;
+        }
         lc->start_time     = time(NULL);
         snprintf(lc->station, sizeof(lc->station), "%s", pa->mycall[chan]);
         if (pa->lora_events_path[chan][0] != '\0') {
@@ -1531,6 +1562,7 @@ void loraspi_init (struct audio_s *pa) {
         text_color_set(DW_COLOR_INFO);
         dw_printf ("loraspi: ch%d APRS-PPM compression %s (receive %s, transmit %s); primed frames are not compatible with 1.x builds\n",
                    chan, LORAC_RELEASE, lc->compress_rx ? "on" : "off", lc->compress_every ? "on" : "off");
+        dw_printf ("loraspi: ch%d hybrid frames (spec 11, experimental): receive %s, transmit %s\n", chan, lc->hybrid_rx ? "on" : "off", lc->hybrid_tx ? "on" : "off");
         int max_pwr  = pa->lora_max_txpower[chan];
         if (max_pwr > 0 && lc->txpower > max_pwr) {
             /* Complain only if the user asked for this power; the 20 dBm default just follows the hardware. */
@@ -1618,6 +1650,21 @@ void loraspi_send_packet (int chan, packet_t pp) {
     /* Build wire payload: header + TNC2 */
     uint8_t payload[256];
     int tnc2_len = (int)strlen(tnc2);
+
+    /* Hybrid frame (spec 11), if LORAHYBRID is set for this channel and the packet can be encoded. */
+    if (lc->hybrid_tx && tnc2_len > 0) {
+        uint8_t hframe[256];
+        int hn = lorah_encode(tnc2, tnc2_len, hframe, (int)sizeof(hframe));
+        if (hn > 0) {
+            text_color_set(DW_COLOR_INFO);
+            dw_printf ("loraspi: ch%d TX hybrid frame: %d B instead of %d B\n", lc->chan, hn, tnc2_len + LORA_PREAMBLE_LEN);
+            if (!txq_push(&lc->txq, hframe, hn)) {
+                text_color_set(DW_COLOR_ERROR);
+                dw_printf ("loraspi: TX queue full — packet dropped\n");
+            }
+            return;
+        }
+    }
 
     /* APRS-PPM compression, if LORACOMPRESS is set for this channel: the smallest of a primed frame, a
      * full compressed frame and the plain frame. */

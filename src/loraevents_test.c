@@ -55,6 +55,7 @@ int main (int argc, char **argv) {
     expect("full",    lorae_classify(full, sizeof full) == LORAE_PPM_FULL);
     expect("primed",  lorae_classify(primed, sizeof primed) == LORAE_PPM_PRIMED);
     expect("native",  lorae_classify(native, sizeof native) == LORAE_NATIVE);
+    { static const uint8_t hybrid[] = { 0x3C, 0xFF, 0x02, 0x03, 0x00 }; expect("hybrid", lorae_classify(hybrid, sizeof hybrid) == LORAE_HYBRID); expect("hybrid name", strcmp(lorae_class_name(LORAE_HYBRID), "hybrid") == 0); }
     expect("other",   lorae_classify(other, sizeof other) == LORAE_UNKNOWN);
     expect("too short", lorae_classify(shortf, sizeof shortf) == LORAE_UNKNOWN);
     expect("names", strcmp(lorae_class_name(LORAE_PPM_FULL), "ppm_full") == 0 && strcmp(lorae_outcome_name(LORAE_DROPPED_NO_REFERENCE), "dropped_no_reference") == 0);
@@ -151,7 +152,7 @@ int main (int argc, char **argv) {
     if (dump) fputs(line, stdout);
     expect_in(line, "\"event\":\"status\"");
     expect_in(line, "\"noise_floor\":{\"avg_dbm\":-86.2,\"min_dbm\":-100,\"max_dbm\":-70,\"samples\":59}");
-    expect_in(line, "\"received\":{\"plain\":12,\"ppm_full\":3,\"ppm_primed\":0,\"native\":0,\"unknown\":0,\"dropped_no_reference\":1,\"parse_failed\":0},\"crc_errors\":4");
+    expect_in(line, "\"received\":{\"plain\":12,\"ppm_full\":3,\"ppm_primed\":0,\"native\":0,\"unknown\":0,\"hybrid\":0,\"dropped_no_reference\":1,\"parse_failed\":0},\"crc_errors\":4");
     st.nf_samples = 0;
     lorae_format_status(line, sizeof line, &st);
     expect_in(line, "\"noise_floor\":null");

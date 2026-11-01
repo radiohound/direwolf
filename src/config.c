@@ -1480,6 +1480,8 @@ void config_init (char *fname, struct audio_s *p_audio_config,
 	        p_audio_config->lora_txpower[lchan]      = 20;
 	        p_audio_config->lora_compress[lchan]     = 0;
 	        p_audio_config->lora_compress_rx[lchan]  = 1;
+	        p_audio_config->lora_hybrid[lchan]       = 0;
+	        p_audio_config->lora_hybrid_rx[lchan]    = 1;
 	        p_audio_config->lora_txpower_set[lchan]  = 0;
 	        p_audio_config->lora_pin_cs[lchan]       = -1;
 	        p_audio_config->lora_pin_reset[lchan]    = -1;
@@ -1711,6 +1713,44 @@ void config_init (char *fname, struct audio_s *p_audio_config,
 	      int n = atoi(t);
 	      if (n >= 0 && n <= 16) p_audio_config->lora_compress[channel] = n;
 	      else { text_color_set(DW_COLOR_ERROR); dw_printf ("Line %d: LORACOMPRESS must be 0 to 16.\n", line); }
+	    }
+	  }
+
+/*
+ * LORAHYBRID  0|1
+ *	Experimental hybrid frames (native frame 3C FF 02 with a PPM-coded content field) for what this channel
+ *	transmits: 1 = send a hybrid frame when the packet can be encoded, otherwise the usual frame; 0 = off (default).
+ *	Receiving hybrid frames needs no setting (see LORAHYBRIDRX).  Example: LORAHYBRID 1
+ */
+	  else if (strcasecmp(t, "LORAHYBRID") == 0) {
+	    if (channel < MAX_RADIO_CHANS || p_audio_config->chan_medium[channel] != MEDIUM_LORA) {
+	      text_color_set(DW_COLOR_ERROR);
+	      dw_printf ("Line %d: LORAHYBRID must follow an LCHANNEL directive.\n", line);
+	      continue;
+	    }
+	    t = split(NULL,0);
+	    if (t != NULL) {
+	      int n = atoi(t);
+	      if (n == 0 || n == 1) p_audio_config->lora_hybrid[channel] = n;
+	      else { text_color_set(DW_COLOR_ERROR); dw_printf ("Line %d: LORAHYBRID must be 0 or 1.\n", line); }
+	    }
+	  }
+
+/*
+ * LORAHYBRIDRX  0|1
+ *	Whether to decode received hybrid frames.  1 = yes (default), 0 = ignore them.  Independent of LORAHYBRID.
+ */
+	  else if (strcasecmp(t, "LORAHYBRIDRX") == 0) {
+	    if (channel < MAX_RADIO_CHANS || p_audio_config->chan_medium[channel] != MEDIUM_LORA) {
+	      text_color_set(DW_COLOR_ERROR);
+	      dw_printf ("Line %d: LORAHYBRIDRX must follow an LCHANNEL directive.\n", line);
+	      continue;
+	    }
+	    t = split(NULL,0);
+	    if (t != NULL) {
+	      int n = atoi(t);
+	      if (n == 0 || n == 1) p_audio_config->lora_hybrid_rx[channel] = n;
+	      else { text_color_set(DW_COLOR_ERROR); dw_printf ("Line %d: LORAHYBRIDRX must be 0 or 1.\n", line); }
 	    }
 	  }
 

@@ -91,6 +91,10 @@ list(APPEND direwolf_SOURCES
   loraspi.c
   loracompress.c
   loraevents.c
+  lorahybrid.c
+  hybrid/hb.c
+  hybrid/hbi.c
+  hybrid/hbc.c
   aprs_ppm.c
   aprs_ppm_model_v1.c
   serial_port.c
@@ -599,3 +603,9 @@ install(TARGETS appserver DESTINATION ${INSTALL_BIN_DIR})
 if(UDEV_FOUND OR WIN32 OR CYGWIN OR HIDAPI_FOUND)
   install(TARGETS cm108 DESTINATION ${INSTALL_BIN_DIR})
 endif()
+
+# Hybrid frames (spec 11): the faster, output-identical frequency table build.
+set_source_files_properties(
+  ${CMAKE_CURRENT_SOURCE_DIR}/hybrid/hbi.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/hybrid/hbc.c
+  PROPERTIES COMPILE_DEFINITIONS HB_FAST)

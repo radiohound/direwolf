@@ -23,8 +23,9 @@ enum {
     LORAE_PLAIN = 0,          /* 3C FF 01 */
     LORAE_PPM_FULL,           /* 3C FF 81 */
     LORAE_PPM_PRIMED,         /* 3C FF C1 */
-    LORAE_NATIVE,             /* 3C FF 02 (not decoded by this build) */
+    LORAE_NATIVE,             /* 3C FF 02 kinds 0 and 1 (not decoded by this build) */
     LORAE_UNKNOWN,            /* anything else */
+    LORAE_HYBRID,             /* 3C FF 02 with information kind 2 or 3 (spec 11); listed last so the other numbers stay as they were */
     LORAE_NCLASSES
 };
 

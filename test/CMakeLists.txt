@@ -508,6 +508,21 @@ add_executable(loraevents_test
 
 target_include_directories(loraevents_test PRIVATE ${CUSTOM_SRC_DIR})
 
+# Unit test for the hybrid frame glue (spec 11 vectors).
+add_executable(lorahybrid_test
+  ${CUSTOM_SRC_DIR}/lorahybrid_test.c
+  ${CUSTOM_SRC_DIR}/lorahybrid.c
+  ${CUSTOM_SRC_DIR}/hybrid/hb.c
+  ${CUSTOM_SRC_DIR}/hybrid/hbi.c
+  ${CUSTOM_SRC_DIR}/hybrid/hbc.c
+  )
+
+target_include_directories(lorahybrid_test PRIVATE ${CUSTOM_SRC_DIR})
+set_source_files_properties(
+  ${CUSTOM_SRC_DIR}/hybrid/hbi.c
+  ${CUSTOM_SRC_DIR}/hybrid/hbc.c
+  PROPERTIES COMPILE_DEFINITIONS HB_FAST)
+
 # doing ctest on previous programs
 
 add_test(dtest dtest)
@@ -517,6 +532,7 @@ add_test(pftest pftest)
 add_test(tlmtest tlmtest)
 add_test(lctest lctest)
 add_test(loraevents_test loraevents_test)
+add_test(lorahybrid_test lorahybrid_test)
 add_test(lltest lltest)
 add_test(enctest enctest)
 add_test(kisstest kisstest)

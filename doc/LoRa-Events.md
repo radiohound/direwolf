@@ -37,7 +37,7 @@ that stream can read these lines. The `frame` block and `heard_from` are additio
                "heard_from":"K6ATV-4","direct":true,"hops_used":0,"private_path":false}}
 
 * `frame.class`: how the frame arrived: `plain` (`3C FF 01`), `ppm_full` (`3C FF 81`), `ppm_primed` (`3C FF C1`),
-  `native` (`3C FF 02`; this build does not decode it, so it appears as `parse_failed`), or `unknown`.
+  `native` (`3C FF 02` kinds 0 and 1; this build does not decode it, so it appears as `parse_failed`), `hybrid` (`3C FF 02` kinds 2 and 3, decoded when `LORAHYBRIDRX` is on; added after schema 0.1 was first written, as a new name that older readers can ignore), or `unknown`.
 * `frame.air_bytes` and `plain_bytes`: the size on the air, and what the plain frame would have been.
 * `frame.outcome`: `ok`, `dropped_no_reference` (a primed frame whose reference was not heard; no `packet`), or
   `parse_failed`.
