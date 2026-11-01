@@ -9,7 +9,7 @@ DW_BIN=${DW_BIN:-/usr/local/bin/direwolf}
 DW_CONF=${DW_CONF:-$HOME/direwolf.conf}
 DW_SERVICE=${DW_SERVICE:-/etc/systemd/system/direwolf-chase.service}
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
-CODE_COMMIT=c9edadb085c98e37c9518ad776345e1a753eb4ab    # the hybrid change; later commits on the branch may only change files under scripts/hill-hybrid/ and doc/LoRa-Hybrid.md
+CODE_COMMIT=a737409e049a8ba241b027613390481d15278101    # the last code change (hybrid c9edadb plus the LORAEVENTS broken-frame and frequency-error commit); later commits on the branch may only change files under scripts/hill-hybrid/ and doc/LoRa-Hybrid.md
 
 step() { echo; echo "=== $*"; }
 die()  { echo; echo "STOP: $*" >&2; exit 1; }
@@ -30,11 +30,11 @@ echo "Backed up to $D"; ls -la "$D"
 step "2. Check the source in $REPO"
 cd "$REPO" || die "cannot enter $REPO"
 [ "$(git rev-parse --abbrev-ref HEAD)" = feature/lora-hybrid ] || die "this clone is not on branch feature/lora-hybrid"
-git merge-base --is-ancestor "$CODE_COMMIT" HEAD || die "this clone does not contain the hybrid commit ${CODE_COMMIT:0:7}"
+git merge-base --is-ancestor "$CODE_COMMIT" HEAD || die "this clone does not contain the code commit ${CODE_COMMIT:0:7}"
 OTHER=$(git diff --name-only "$CODE_COMMIT" HEAD | grep -v '^scripts/hill-hybrid/\|^doc/LoRa-Hybrid.md$' || true)
 [ -z "$OTHER" ] || die "the branch changed files other than these scripts since ${CODE_COMMIT:0:7}: $OTHER"
 [ -z "$(git status --porcelain --untracked-files=no)" ] || die "the clone has local changes"
-echo "Source OK: $(git log --format=%h -1) = hybrid commit ${CODE_COMMIT:0:7} plus scripts and docs only"
+echo "Source OK: $(git log --format=%h -1) = code commit ${CODE_COMMIT:0:7} plus scripts and docs only"
 
 step "3. Build in $REPO/build"
 cmake -S . -B build -DUNITTEST=ON > build.log 2>&1 || { tail -20 build.log; die "cmake failed"; }
