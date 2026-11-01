@@ -1,6 +1,6 @@
-# Hybrid frames (experimental)
+# LACF, the LoRa APRS Compact Frame (experimental)
 
-The native frame `3C FF 02` whose content field is PPM coded, as specified in `lora-aprs-ideas/spec/11-native-ppm-frame-byte-plan.md` (a draft, not agreed with the
+LACF (called hybrid in the directives and the code) is the native frame `3C FF 02` whose content field is PPM coded, as specified in `lora-aprs-ideas/spec/11-native-ppm-frame-byte-plan.md` (a draft, not agreed with the
 people who maintain the native frame). The frame code in `src/hybrid/` is the C reference of that spec; `src/lorahybrid.c` is the glue.
 
 * **Receive (on by default, `LORAHYBRIDRX 1`):** a frame `3C FF 02` with information kind 2 or 3 is decoded by the receiver rules of the spec (version known, CRC-16, canonical
@@ -9,5 +9,4 @@ people who maintain the native frame). The frame code in `src/hybrid/` is the C 
 * **Transmit (off by default, `LORAHYBRID 1`):** the channel sends a hybrid frame when the packet can be encoded, otherwise the usual frame (compressed or plain).
 * **Events:** `LORAEVENTS` lines carry the class `hybrid` for these frames.
 
-Tested: `lorahybrid_test` (40 spec vectors, 35 relayed frames, 28 rejection vectors), and over the air between a T-Deck tracker and a LoRa32 (not through Dire Wolf).
-**Not yet run on a radio in Dire Wolf.**
+Tested: `lorahybrid_test` (40 spec vectors, 35 relayed frames, 28 rejection vectors), and on the air on 1 November 2026 on the hill Pi (K6ATV-10, SX1262 hat, 433.775 MHz, SF12): it decoded LACF frames from a LoRa32 and a T-Deck, which Dire Wolf gated to APRS-IS, and with `LORAHYBRID 1` it sent LACF beacons that a T-Deck decoded. The hill drops the RXT block of a relayed frame, because the AX.25 packet object has no place for it.

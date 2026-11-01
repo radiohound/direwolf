@@ -1,7 +1,7 @@
-Hybrid frames on the hill Pi (branch feature/lora-hybrid)
+LACF (LoRa APRS Compact Frame, called hybrid in the directives) on the hill Pi (branch feature/lora-hybrid)
 
 The Direwolf that is on the hill now (APRS-PPM compression + LORAEVENTS + LORARXGAIN + CRC-on transmit) plus one change: it
-decodes hybrid frames, i.e. the native frame 3C FF 02 with a PPM-coded content field (spec 11 of the APRS-PPM proposal, a DRAFT).
+decodes LACF frames, i.e. the native frame 3C FF 02 with a PPM-coded content field (spec 11 of the APRS-PPM proposal, a DRAFT).
 Transmit is NOT changed and the config is not edited. Built and unit-tested on a Mac; the Linux-only radio code (loraspi.c) is
 compiled for the first time by setup.sh on the Pi. It has never run on a radio.
 
