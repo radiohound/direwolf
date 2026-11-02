@@ -1420,7 +1420,6 @@ static void *rx_thread (void *arg) {
                 s.nf_samples = nf_n;
                 if (nf_n > 0) { s.nf_avg_dbm = 10.0 * log10(nf_pwr / nf_n); s.nf_min_dbm = nf_min; s.nf_max_dbm = nf_max; }
                 s.rx_gain = lc->chip == LORA_CHIP_SX1262 ? (lc->rxgain_cur == 1 ? "boosted" : "powersave") : NULL;
-                s.lacf = lorah_version();
                 for (int i = 0; i < LORAE_NCLASSES; i++) s.class_count[i] = lc->ev_class[i];
                 s.dropped = lc->ev_dropped;  s.parse_failed = lc->ev_parse_failed;  s.crc_errors = lc->ev_crc_errors;
                 char line[1024];

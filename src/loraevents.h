@@ -88,7 +88,6 @@ typedef struct {
     int         nf_min_dbm;
     int         nf_max_dbm;
     const char *rx_gain;          /* "powersave", "boosted", or NULL */
-    const char *lacf;             /* the LACF version this build speaks (spec 11, e.g. "2.0.0"; MAJOR is the protocol version), or NULL */
     long        class_count[LORAE_NCLASSES];   /* frames received this minute, by class */
     long        dropped;          /* compressed frames dropped for lack of a reference */
     long        parse_failed;

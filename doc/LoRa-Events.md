@@ -63,9 +63,6 @@ that stream can read these lines. The `frame` block and `heard_from` are additio
 The noise floor over the last minute (average, minimum, maximum and number of samples), the receive-gain mode, and how
 many frames of each class were received, how many compressed frames were dropped, how many could not be parsed, and how many frames failed the LoRa CRC.
 
-`lacf` is the LACF version this build speaks (spec 11, `MAJOR.MINOR.PATCH`, for example `"2.0.0"`); MAJOR is the protocol version carried in every frame. A reader can show which version each receiver runs, and
-explain frames heard but not decoded (a station on another protocol version drops and is dropped). Absent from builds that do not report it.
-
 ## Limits
 
 * One file per Direwolf run, with a `boot_id` and a `sequence` number so that a reader can spot gaps.
