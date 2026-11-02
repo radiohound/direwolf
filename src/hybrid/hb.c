@@ -150,8 +150,9 @@ static int dec_element(const uint8_t *b, size_t size, size_t *i, char *e, size_t
         if (t & 0x20) strcat(e, "*");
         *i = j; return 1;
     }
-    { size_t n = t & 0x1F;
+    { size_t n = t & 0x1F, q;
       if (n == 0 || *i + 1 + n > size || n + 1 > cap || memchr(b + *i + 1, 0, n)) return 0;
+      for (q = 0; q < n; q++) if (b[*i + 1 + q] == ':' || b[*i + 1 + q] == ',' || b[*i + 1 + q] == '>') return 0;     /* strict: it would split the TNC2 packet in the wrong place */
       memcpy(e, b + *i + 1, n); e[n] = 0; *i += 1 + n; return 1; }
 }
 
@@ -295,7 +296,7 @@ typedef struct { char src[40]; char dest[40]; char path[15][40]; int np; const c
 static int tnc_parse(const char *s, size_t len, tnc_t *t)
 {
     const char *gt = memchr(s, '>', len), *colon, *p, *end;
-    if (!gt || gt == s || gt - s >= 40) return 0;
+    if (!gt || gt == s || gt - s >= 40 || memchr(s, ':', (size_t)(gt - s))) return 0;      /* a ':' in the source would split the packet in the wrong place */
     colon = memchr(gt, ':', len - (size_t)(gt - s));
     if (!colon) return 0;
     memcpy(t->src, s, (size_t)(gt - s)); t->src[gt - s] = 0;
@@ -466,6 +467,7 @@ int hb_decode(const uint8_t *fr, size_t n, char *tnc2, size_t cap, hb_info_t *in
         if (L < 1) return HB_ERR_CONTENT;
         ok = (kind == 3) ? hbc_payload_check(fr + cs + 4, pn, L, (uint8_t *)comment) : hbi_payload_check(fr + cs + 4, pn, L, (uint8_t *)text);
         if (!ok) return HB_ERR_PAYLOAD;
+        if (memchr(kind == 3 ? comment : text, 0, L)) return HB_ERR_CONTENT;     /* strict: no NUL in a TNC2 packet (the CRC is over the whole text, not up to the NUL) */
         if (kind == 3) comment[L] = 0; else text[L] = 0;
         if (4 + pn >= 1 + L) return HB_ERR_SIZE;
         if (kind == 2) { memcpy(infof, text, L); infof[L] = 0; }
@@ -493,9 +495,10 @@ int hb_decode(const uint8_t *fr, size_t n, char *tnc2, size_t cap, hb_info_t *in
 size_t hb_relay(const uint8_t *fr, size_t n, const char *relay_call, const uint8_t tuple[4], uint8_t *out, size_t cap)
 {
     char tn[700]; hb_info_t in; tnc_t t; int len = hb_decode(fr, n, tn, sizeof tn, &in);
-    size_t i = 4, cs, end = n, w = 0, wr; int k, relay_idx = -1, own; uint8_t hdr = fr[3]; char tmp[40]; hb_rxt_t rx;
+    size_t i = 4, cs, end = n, w = 0, wr; int k, relay_idx = -1, own; uint8_t hdr; char tmp[40]; hb_rxt_t rx;
     uint8_t front[300]; char path[16][40]; int np;
     if (len <= 0 || !tnc_parse(tn, (size_t)len, &t)) return 0;
+    hdr = fr[3];
     np = t.np; for (k = 0; k < np; k++) strcpy(path[k], t.path[k]);
     for (k = 0; k < np; k++) {                                              /* the first element that is not yet used */
         size_t l = strlen(path[k]);
@@ -519,15 +522,13 @@ size_t hb_relay(const uint8_t *fr, size_t n, const char *relay_call, const uint8
       i = j; }
     cs = i; if (in.has_rxt) { int kk = in.rxt.n; end = n - (size_t)(4 * kk + 1); }
     rx = in.has_rxt ? in.rxt : (hb_rxt_t){ 0 };
-    if (rx.n >= HB_MAX_TUPLES) return 0;
+    if (own && rx.n >= HB_MAX_TUPLES) return 0;                              /* an eighth element or later adds no tuple, so it can relay a frame that already has seven */
     /* new front */
     front[0] = 0x3C; front[1] = 0xFF; front[2] = 0x02;
     front[3] = (uint8_t)((np << 4) | ((rx.n + own) ? 0x08 : 0) | (hdr & 0x07));
-    { size_t fw = 4; char sp[40]; const char *gt;
-      gt = strchr(tn, '>'); memcpy(sp, tn, (size_t)(gt - tn)); sp[gt - tn] = 0;
-      if (!enc_element(sp, front + fw, sizeof front - fw, &wr)) return 0; fw += wr;
-      { int idx = -1, q; for (q = 0; q < nlist; q++) if (!strcmp(list[q], t.dest)) { idx = q; break; }
-        if (idx >= 0) front[fw++] = (uint8_t)idx; else { front[fw++] = 63; if (!enc_element(t.dest, front + fw, sizeof front - fw, &wr)) return 0; fw += wr; } }
+    { size_t fw = 4;
+      if (in.path_start < 4 || in.path_start - 4 > sizeof front - 4) return 0;
+      memcpy(front + fw, fr + 4, in.path_start - 4); fw += in.path_start - 4;   /* source and destination exactly as received (spec 11, Relay step 1) */
       for (k = 0; k < np; k++) { if (!enc_element(path[k], front + fw, sizeof front - fw, &wr)) return 0; fw += wr; }
       if (fw + (end - (cs - 0)) + 8 + (size_t)rx.n * 4 + 5 > cap) return 0;
       memcpy(out, front, fw); w = fw; }
