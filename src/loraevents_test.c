@@ -60,7 +60,7 @@ int main (int argc, char **argv) {
     expect("too short", lorae_classify(shortf, sizeof shortf) == LORAE_UNKNOWN);
     expect("names", strcmp(lorae_class_name(LORAE_PPM_FULL), "ppm_full") == 0 && strcmp(lorae_outcome_name(LORAE_DROPPED_NO_REFERENCE), "dropped_no_reference") == 0);
 
-    /* a frame whose CRC failed keeps its bytes, and a good frame can carry the frequency error */
+    /* a frame whose CRC failed keeps its bytes in this local file (the forwarder strips them before anything is sent), and a good frame can carry the frequency error */
     {
         const uint8_t bad[] = { 0x3C, 0xFF, 0x81, 0x00, 0xAB };
         lorae_rx_t e = rx(NULL, 0, LORAE_PPM_FULL, LORAE_CRC_ERROR);
@@ -81,6 +81,27 @@ int main (int argc, char **argv) {
         lorae_format_rx(line, sizeof line, &g);
         expect_in(line, "\"freq_error_hz\":365");
         expect_not_in(line, "raw_hex");
+    }
+
+    /* private_path follows the iGate rule: RFONLY or NOGATE anywhere in the header, any case; a header that cannot be read counts as private */
+    {
+        static const struct { const char *tnc2; int priv; } P[] = {
+            { "A1B>APRS,WIDE1-1:>x", 0 },            { "A1B>APRS,RFONLY:>x", 1 },          { "A1B>APRS,RFONLY*:>x", 1 },
+            { "A1B>APRS,RFONLY-1:>x", 1 },           { "A1B>APRS,rfonly:>x", 1 },          { "A1B>APRS,NOGATE:>x", 1 },
+            { "A1B>APRS,Nogate,WIDE2-1:>x", 1 },     { "A1B>RFONLY,WIDE1-1:>x", 1 },       { "A1B>APRS,XRFONLYX:>x", 1 },
+            { "A1B>APRS:>RFONLY in the text", 0 },   { "A1B>APRS,WIDE1-1:>NOGATE", 0 },
+        };
+        for (size_t i = 0; i < sizeof P / sizeof P[0]; i++) {
+            lorae_rx_t q = rx(P[i].tnc2, strlen(P[i].tnc2), LORAE_PLAIN, LORAE_OK);
+            lorae_format_rx(line, sizeof line, &q);
+            if (P[i].priv) expect_in(line, "\"private_path\":true"); else expect_in(line, "\"private_path\":false");
+        }
+        lorae_rx_t nc = rx("no header here RFONLY", 21, LORAE_PLAIN, LORAE_PARSE_FAILED);
+        lorae_format_rx(line, sizeof line, &nc);
+        expect_in(line, "\"private_path\":true");
+        lorae_rx_t nogt = rx("A1B,RFONLY:x", 12, LORAE_PLAIN, LORAE_PARSE_FAILED);
+        lorae_format_rx(line, sizeof line, &nogt);
+        expect_in(line, "\"private_path\":true");
     }
 
     /* who transmitted */

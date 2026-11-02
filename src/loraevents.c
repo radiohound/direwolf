@@ -212,6 +212,18 @@ static void common_head (sb_t *b, const char *event, const char *boot_id, uint32
     sb_printf(b, ",\"interface\":\"direwolf-lora-ch%d\"}", channel);
 }
 
+/* The rule an iGate applies before it uploads to APRS-IS: the words RFONLY or NOGATE anywhere in the header (everything before the first ':'), in any
+ * case, so RFONLY-1 or a lower-case nogate also count. A packet with no ':' or no '>' before it cannot be read, so it is treated as private too:
+ * when in doubt, it is not shared. */
+static int private_header (const char *t, size_t len) {
+    const char *colon = memchr(t, ':', len);
+    if (!colon || !memchr(t, '>', (size_t)(colon - t))) return 1;
+    size_t n = (size_t)(colon - t);
+    for (size_t i = 0; i + 6 <= n; i++)
+        if (starts_with_ci(t + i, n - i, "RFONLY") || starts_with_ci(t + i, n - i, "NOGATE")) return 1;
+    return 0;
+}
+
 static void radio_block (sb_t *b, long freq_hz, long bw_hz, int sf, int cr) {
     sb_printf(b, "\"radio\":{\"frequency_hz\":%ld,\"bandwidth_hz\":%ld,\"spreading_factor\":%d,\"coding_rate\":\"4/%d\"}",
               freq_hz, bw_hz, sf, cr);
@@ -228,7 +240,7 @@ size_t lorae_format_rx (char *out, size_t cap, const lorae_rx_t *e) {
     sb_put(&b, "}}");
     sb_printf(&b, ",\"frame\":{\"class\":\"%s\",\"air_bytes\":%d,\"plain_bytes\":%d,\"outcome\":\"%s\"",
               lorae_class_name(e->frame_class), e->air_bytes, e->plain_bytes, lorae_outcome_name(e->outcome));
-    if (e->outcome == LORAE_CRC_ERROR && e->raw && e->raw_len > 0) {
+    if (e->outcome == LORAE_CRC_ERROR && e->raw && e->raw_len > 0) {         /* local file only: whatever sends this file on to a server must remove raw_hex */
         sb_put(&b, ",\"raw_hex\":\"");
         for (size_t i = 0; i < e->raw_len; i++) sb_printf(&b, "%02x", e->raw[i]);
         sb_put(&b, "\"");
@@ -246,13 +258,10 @@ size_t lorae_format_rx (char *out, size_t cap, const lorae_rx_t *e) {
             sb_put(&b, ",\"source\":");       sb_json_string(&b, h.src, h.src_n);
             sb_put(&b, ",\"destination\":");  sb_json_string(&b, h.dst, h.dst_n);
             sb_put(&b, ",\"path\":[");
-            int private_path = 0;
+            int private_path = private_header(e->tnc2, e->tnc2_len);
             for (int i = 0; i < h.nel; i++) {
                 if (i) sb_put(&b, ",");
                 sb_json_string(&b, h.el[i], h.el_n[i]);
-                size_t nn = strip_star(h.el[i], h.el_n[i]);
-                if (nn == 6 && starts_with_ci(h.el[i], nn, "RFONLY")) private_path = 1;
-                if (nn == 6 && starts_with_ci(h.el[i], nn, "NOGATE")) private_path = 1;
             }
             sb_put(&b, "]");
             char who[16];  int direct = 0, hops = 0;
@@ -261,6 +270,8 @@ size_t lorae_format_rx (char *out, size_t cap, const lorae_rx_t *e) {
             if (known) sb_json_string(&b, who, strlen(who)); else sb_put(&b, "null");
             sb_printf(&b, ",\"direct\":%s,\"hops_used\":%d,\"private_path\":%s",
                       direct ? "true" : "false", hops, private_path ? "true" : "false");
+        } else {
+            sb_put(&b, ",\"private_path\":true");           /* a header that cannot be read is never shared */
         }
         sb_put(&b, "}");
     } else {

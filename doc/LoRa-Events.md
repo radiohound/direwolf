@@ -50,8 +50,9 @@ that stream can read these lines. The `frame` block and `heard_from` are additio
   (`direct: true`), otherwise the last digipeater that has. This is the **list of neighbours**: the stations heard
   directly. It is `null` when the only used element is an alias such as `WIDE2`. `hops_used` counts the path elements
   up to the last one used.
-* `private_path`: true when the path contains `RFONLY` or `NOGATE`. Those packets are kept off APRS-IS by iGates;
-  anything that shares the recording with other people should leave them out.
+* `private_path`: true when the header (everything before the first `:`) contains `RFONLY` or `NOGATE` anywhere, in any case (`RFONLY-1` and `nogate` count too),
+  the rule an iGate applies before it uploads to APRS-IS. A header that cannot be read (no `:`, or no `>` before it) counts as private as well. Those packets are
+  kept off APRS-IS by iGates; anything that shares the recording with other people should leave them out.
 
 ### `tx`: a frame sent
 
@@ -68,8 +69,8 @@ many frames of each class were received, how many compressed frames were dropped
 * The clock is the Pi's; keep it on NTP.
 * Frames that fail the LoRa CRC are counted in each `status` line (`crc_errors`) and, on the SX1262, also get an
   `rx` line of their own: `reception.crc_valid` is `false`, `frame.outcome` is `crc_error`, `packet` is `null`, and
-  `frame.raw_hex` holds the bytes exactly as the radio heard them (they are damaged, so nothing is decoded and the
-  class is only a guess from the first bytes). At most 30 such lines are written a minute; the rest are counted in
-  `crc_errors` and reported on the console. Readers that count receptions should leave `crc_error` lines out.
+  `frame.raw_hex` holds the bytes exactly as the radio heard them (they are damaged, so nothing is decoded and the class is only a guess from the first bytes).
+  They could hold part of a packet whose path says RFONLY or NOGATE, so they stay in this file: whatever sends this file on to a server must remove
+  `raw_hex` from every line before it is sent. At most 30 such lines are written a minute; the rest are counted in `crc_errors` and reported on the console. Readers that count receptions should leave `crc_error` lines out.
 * The recording holds other people's callsigns and positions, as the radio did. Keep it private, and do not publish it
   without removing what the senders did not agree to share.
