@@ -43,6 +43,10 @@ int main(void) {
 		int fl = unhex(HB_REJECT[i], frame, sizeof frame);
 		EXPECT("reject", lorah_decode(frame, fl, text, sizeof text, NULL) < 0);
 	}
+	for (i = 0; i < sizeof HB_NOENC / sizeof HB_NOENC[0]; i++) {
+		char tnc2[400]; int tl = unhex(HB_NOENC[i], (uint8_t *)tnc2, sizeof tnc2 - 1); tnc2[tl] = 0;
+		EXPECT("not encodable", lorah_encode(tnc2, tl, frame, sizeof frame) == 0);
+	}
 	{ uint8_t k1[6] = { 0x3C, 0xFF, 0x02, 0x01, 0, 0 }, k2[6] = { 0x3C, 0xFF, 0x02, 0x02, 0, 0 }, t[6] = { 0x3C, 0xFF, 0x01, 0x02, 0, 0 };
 	  EXPECT("kind 1 is not hybrid", !lorah_is_hybrid(k1, 6));
 	  EXPECT("kind 2 is hybrid", lorah_is_hybrid(k2, 6));

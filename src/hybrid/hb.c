@@ -52,7 +52,7 @@ int hb_load_list(const char *path)
     return nlist;
 }
 
-/* ---- draft 0 address elements ---- */
+/* ---- address elements ---- */
 static const char B40[] = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
 static int match_wide(const char *e, int *n, int *N, int *star)
@@ -65,6 +65,24 @@ static int match_wide(const char *e, int *n, int *N, int *star)
     if (*p == '-') { p++; if (*p < '1' || *p > '7') return 0; *N = *p++ - '0'; if (*N > *n) return 0; }
     if (*p == '*') { *star = 1; p++; }
     return *p == 0;
+}
+
+/* A path element shaped like a WIDE alias (WIDE, digits, optional - and digits, optional *) has to follow the APRS rule: n 1 to 7, N 1 to n.
+ * One that does not (WIDE1-2, WIDE2-3, WIDE8-1) is not carried by LACF, and a relay does not repeat it on RF (spec 11, "Non-compliant WIDE paths").
+ * Returns 1 for anything else, including an ordinary name that merely starts with WIDE. */
+static int wide_compliant(const char *e)
+{
+    const char *p = e; int n = 0, N = 0, nd = 0, Nd = 0, dash = 0;
+    if (strncmp(p, "WIDE", 4)) return 1;
+    p += 4;
+    if (*p < '0' || *p > '9') return 1;
+    while (*p >= '0' && *p <= '9') { if (n < 1000) n = n * 10 + (*p - '0'); nd++; p++; }
+    if (*p == '-') { dash = 1; p++; if (*p < '0' || *p > '9') return 1; while (*p >= '0' && *p <= '9') { if (N < 1000) N = N * 10 + (*p - '0'); Nd++; p++; } }
+    if (*p == '*') p++;
+    if (*p != 0) return 1;
+    if (nd != 1 || n < 1 || n > 7) return 0;
+    if (dash && (Nd != 1 || N < 1 || N > n)) return 0;
+    return 1;
 }
 
 static int match_call(const char *e, char *call, int *ssid, int *star)
@@ -137,7 +155,7 @@ static int dec_element(const uint8_t *b, size_t size, size_t *i, char *e, size_t
       memcpy(e, b + *i + 1, n); e[n] = 0; *i += 1 + n; return 1; }
 }
 
-/* ---- the position block of draft 0 (kind 3) ---- */
+/* ---- the position block (kind 3) ---- */
 typedef struct { int present; size_t offset; char text[16]; } alt_t;
 static const char DTIS[] = "!=/@";
 static void pad(char *out, unsigned v, int w) { char f[8]; snprintf(f, sizeof f, "%%0%du", w); snprintf(out, 16, f, v); }
@@ -316,11 +334,20 @@ static size_t rxt_bytes(const hb_rxt_t *r, uint8_t *out)
     out[w++] = mask; return w;
 }
 
+int hb_path_ok(const char *tnc2, size_t len)
+{
+    tnc_t t; int k;
+    if (len > 600 || !tnc_parse(tnc2, len, &t)) return 1;                   /* other problems are for hb_encode to report */
+    for (k = 0; k < t.np; k++) if (!wide_compliant(t.path[k])) return 0;
+    return 1;
+}
+
 size_t hb_encode(const char *tnc2, size_t len, const hb_rxt_t *rxt, uint8_t *out, size_t cap, hb_info_t *info)
 {
     tnc_t t; uint8_t front[300], posblk[32], content[300], pay[300]; char comment[300]; char back[600]; hb_info_t bi;
     size_t w = 0, fw, pw = 0, cw, n, clen = 0, L, k, wr; int kind = 2, cc = 1; const uint8_t *textp; uint8_t V = (uint8_t)VERSION, hdr;
     if (len > 600 || !tnc_parse(tnc2, len, &t) || t.ilen > 255) return 0;     /* the limits are on the frame (255) and the information field (255), not on the plain text */
+    { int k0; for (k0 = 0; k0 < t.np; k0++) if (!wide_compliant(t.path[k0])) return 0; }   /* a non-compliant WIDE path is dropped, not sent in any form */
     /* kind: position block if the information field has one and round-trips */
     pw = pos_encode(t.info, t.ilen, posblk, comment, &clen);
     if (pw) {                                                           /* the block must give back the information field exactly, or kind 2 carries it */
@@ -388,7 +415,7 @@ int hb_decode(const uint8_t *fr, size_t n, char *tnc2, size_t cap, hb_info_t *in
       if (code == 63) { i++; if (!dec_element(fr, n, &i, dest, sizeof dest)) return HB_ERR_FRONT; }
       else { if (code >= nlist) return HB_ERR_FRONT; strcpy(dest, list[code]); i++; } }
     path_start = i;
-    for (k = 0; k < npath; k++) if (!dec_element(fr, n, &i, path[k], sizeof path[k])) return HB_ERR_FRONT;
+    for (k = 0; k < npath; k++) if (!dec_element(fr, n, &i, path[k], sizeof path[k]) || !wide_compliant(path[k])) return HB_ERR_FRONT;
     front_len = i;
     if (kind == 3) { if (!pos_decode(fr, n, &i, prefix, sizeof prefix, &alt)) return HB_ERR_POSITION; }
     cs = i;

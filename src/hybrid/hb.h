@@ -1,5 +1,5 @@
 /* Reference implementation of the frame of spec 11 (hybrid B): 3C FF 02 | header | source | destination | path... | [position block] | content field | [RXT block].
- * Kinds 2 and 3 only (kinds 0 and 1 are draft 0 and not handled here). Written from spec/11 and the public draft-0 description of the address and position encodings. */
+ * Kinds 2 and 3 only (a frame of kind 0 or 1 is dropped). Written from spec/11. */
 #ifndef HB_H
 #define HB_H
 #include <stddef.h>
@@ -23,6 +23,10 @@ uint16_t hb_crc16(const uint8_t *p, size_t n);   /* CRC-16/X-25, check value of 
 
 /* Encode a TNC2 packet ("SRC>DST,PATH:INFO"); returns the frame length, or 0 if it cannot be encoded (the caller then sends a plain frame). rxt may be NULL. */
 size_t hb_encode(const char *tnc2, size_t len, const hb_rxt_t *rxt, uint8_t *out, size_t cap, hb_info_t *info);
+
+/* 0 if the path of the TNC2 packet holds a WIDEn-N that breaks the APRS rule (n 1 to 7, N 1 to n), otherwise 1. Such a packet is dropped: hb_encode refuses it, and the caller
+ * must NOT fall back to sending it as plain text or relaying it on RF (spec 11, "Non-compliant WIDE paths"). */
+int  hb_path_ok(const char *tnc2, size_t len);
 
 /* Receiver (spec 11 "Receiver"): returns the TNC2 length (> 0) or a negative HB_ERR_* (the frame is dropped). */
 int hb_decode(const uint8_t *fr, size_t n, char *tnc2, size_t cap, hb_info_t *info);
