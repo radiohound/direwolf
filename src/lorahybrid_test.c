@@ -48,7 +48,7 @@ int main(void) {
 		EXPECT("not encodable", lorah_encode(tnc2, tl, frame, sizeof frame) == 0);
 	}
 	{ uint8_t k1[6] = { 0x3C, 0xFF, 0x02, 0x01, 0, 0 }, k2[6] = { 0x3C, 0xFF, 0x02, 0x02, 0, 0 }, t[6] = { 0x3C, 0xFF, 0x01, 0x02, 0, 0 };
-	  EXPECT("kind 1 is not hybrid", !lorah_is_hybrid(k1, 6));
+	  EXPECT("kind 1 (plain with a position block) is hybrid", lorah_is_hybrid(k1, 6));
 	  EXPECT("kind 2 is hybrid", lorah_is_hybrid(k2, 6));
 	  EXPECT("plain is not hybrid", !lorah_is_hybrid(t, 6)); }
 	EXPECT("no colon is not encodable", lorah_encode("no colon here", 13, frame, sizeof frame) == 0);

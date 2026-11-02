@@ -4,7 +4,7 @@ LACF (called hybrid in the directives and the code) is the native frame `3C FF 0
 
 **Credit.** LACF is developed together with Fabrice Morel, F4MLV (moricef): it combines his native LoRa APRS frame and code with K6ATV's PPM compression, and the two are working on it together (issue 7 of moricef/LoRa_APRS_Tracker). RXT was created by Jon, N7UV. Dire Wolf is John Langner's (WB2OSZ).
 
-* **Receive (on by default, `LORAHYBRIDRX 1`):** a frame `3C FF 02` with information kind 2 or 3 is decoded by the receiver rules of the spec (version known, CRC-16, canonical
+* **Receive (on by default, `LORAHYBRIDRX 1`):** a frame `3C FF 02` of any kind (plain content, kinds 0 and 1, or LACF content, kinds 2 and 3) is decoded by the receiver rules of the spec (protocol and table version known, CRC-16, canonical
   payload, impossible fields dropped) and handed to Dire Wolf as the ordinary packet it carries. Frames that fail the rules are dropped and logged as `hybrid frame dropped`.
   The RXT block (per-hop measurements) that a relayed frame may carry is not carried on: Dire Wolf's AX.25 packet object has no place for it.
 * **Transmit (off by default, `LORAHYBRID 1`):** the channel sends a hybrid frame when the packet can be encoded, otherwise the usual frame (compressed or plain).

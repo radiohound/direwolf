@@ -1443,7 +1443,7 @@ static void *rx_thread (void *arg) {
             int ckind = 0;
             int cn = 0;
 
-            /* A hybrid frame (3C FF 02, kind 2 or 3; spec 11) is decoded by the receiver rules of the spec to its TNC2 text.
+            /* A hybrid frame (3C FF 02, any kind; spec 11) is decoded by the receiver rules of the spec to its TNC2 text.
              * The RXT block it may carry cannot be held by the AX.25 packet object and is dropped. */
             char hybrid_text[LORAH_MAX_TEXT + 1];
             int hn = 0;

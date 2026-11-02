@@ -1,7 +1,7 @@
 /*
  * lorahybrid.h  --  APRS hybrid B frames for LoRa APRS (experimental).
  *
- * The native frame 3C FF 02 with information kind 2 or 3, whose content field is PPM coded (spec 11 of the APRS-PPM proposal,
+ * The native frame 3C FF 02 (any kind: plain content in kinds 0 and 1, PPM-coded content in kinds 2 and 3, each with a CRC-16) (spec 11 of the APRS-PPM proposal,
  * lora-aprs-ideas/spec/11-native-ppm-frame-byte-plan.md).  The frame code in src/hybrid/ is the C reference of that spec.
  *
  * Receive: lorah_decode() turns an accepted frame into its TNC2 text; the RXT block (per-hop measurements) cannot be carried by the AX.25
@@ -15,7 +15,7 @@
 #define LORAH_MAX_TEXT 700
 
 int lorah_init (void);						/* once, before anything else; returns 1 on success */
-int lorah_is_hybrid (const uint8_t *frame, int len);		/* 3C FF 02 with information kind 2 or 3 */
+int lorah_is_hybrid (const uint8_t *frame, int len);		/* 3C FF 02, any kind */
 /* Returns the length of the TNC2 text in out (NUL terminated), or a negative reason if the receiver rules drop the frame. */
 int lorah_decode (const uint8_t *frame, int len, char *out, int cap, int *rxt_tuples);
 /* Returns the frame length, or 0 if the packet cannot be encoded. */

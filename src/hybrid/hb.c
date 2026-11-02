@@ -10,7 +10,8 @@ int    hbi_payload_check(const uint8_t *pay, size_t n, size_t L, uint8_t *text);
 size_t hbc_payload_encode(const uint8_t *text, size_t tl, uint8_t *out, size_t cap);
 int    hbc_payload_check(const uint8_t *pay, size_t n, size_t L, uint8_t *text);
 
-#define VERSION 1                           /* table set 1: the two tables above and the destination list set 1 */
+#define TABLE_VERSION 0                     /* table version 0: the two PPM tables above and the tocall destination list (set 1 file), revised together */
+#define VBYTE ((HB_WIRE_VERSION << 3) | TABLE_VERSION)   /* V = protocol version (5 bits) | table version (3 bits); protocol 2: plain content has a CRC-16, header bit 2 = plain */
 static char list[62][12]; static int nlist = 0;
 
 const char *hb_reason(int c)
@@ -346,7 +347,7 @@ int hb_path_ok(const char *tnc2, size_t len)
 size_t hb_encode(const char *tnc2, size_t len, const hb_rxt_t *rxt, uint8_t *out, size_t cap, hb_info_t *info)
 {
     tnc_t t; uint8_t front[300], posblk[32], content[300], pay[300]; char comment[300]; char back[600]; hb_info_t bi;
-    size_t w = 0, fw, pw = 0, cw, n, clen = 0, L, k, wr; int kind = 2, cc = 1; const uint8_t *textp; uint8_t V = (uint8_t)VERSION, hdr;
+    size_t w = 0, fw, pw = 0, cw, n, clen = 0, L, k, wr; int kind = 2, cc = 1; const uint8_t *textp; uint8_t V = (uint8_t)VBYTE, hdr;
     if (len > 600 || !tnc_parse(tnc2, len, &t) || t.ilen > 255) return 0;     /* the limits are on the frame (255) and the information field (255), not on the plain text */
     { int k0; for (k0 = 0; k0 < t.np; k0++) if (!wide_compliant(t.path[k0])) return 0; }   /* a non-compliant WIDE path is dropped, not sent in any form */
     /* kind: position block if the information field has one and round-trips */
@@ -365,22 +366,24 @@ size_t hb_encode(const char *tnc2, size_t len, const hb_rxt_t *rxt, uint8_t *out
     }
     if (pw) kind = 3;
     if (kind == 3) { textp = (const uint8_t *)comment; L = clen; } else { textp = (const uint8_t *)t.info; L = t.ilen; }
-    /* content: PPM when 4 + n < 1 + L, else raw */
+    /* content: PPM when 4 + n < 3 + L (plain is V, a CRC-16 and the text: 3 + L), else plain */
     cw = 0;
     if (L) {
         n = (kind == 3) ? hbc_payload_encode(textp, L, pay, sizeof pay) : hbi_payload_encode(textp, L, pay, sizeof pay);
-        if (n && 4 + n < 1 + L) {
+        if (n && 4 + n < 3 + L) {
             uint16_t crc; uint8_t h = (uint8_t)kind;
-            cc = 0; V = (uint8_t)(cc << 6 | VERSION);
+            cc = 0;
             crc = crc_input(h, V, t.src, t.dest, t.info, t.ilen);
             content[cw++] = V; content[cw++] = (uint8_t)L; content[cw++] = (uint8_t)(crc & 0xFF); content[cw++] = (uint8_t)(crc >> 8);
             memcpy(content + cw, pay, n); cw += n;
         }
     }
-    if (cc == 1) { V = (uint8_t)(3 << 6 | VERSION);               /* raw content is cc = 3 (binary 11), two bits away from PPM (00) */
-        content[cw++] = V; memcpy(content + cw, textp, L); cw += L; }
+    if (cc == 1) { uint16_t crc;                                  /* plain content: kind 0 or 1 (kind - 2), no LACF flag; V, CRC-16 (little endian), text */
+        crc = crc_input((uint8_t)(kind - 2), V, t.src, t.dest, t.info, t.ilen);
+        content[cw++] = V; content[cw++] = (uint8_t)(crc & 0xFF); content[cw++] = (uint8_t)(crc >> 8);
+        memcpy(content + cw, textp, L); cw += L; }
     /* front */
-    hdr = (uint8_t)((t.np << 4) | ((rxt && rxt->n) ? 0x08 : 0) | kind);
+    hdr = (uint8_t)((t.np << 4) | ((rxt && rxt->n) ? 0x08 : 0) | (cc == 1 ? kind - 2 : kind));
     front[0] = 0x3C; front[1] = 0xFF; front[2] = 0x02; front[3] = hdr; fw = 4;
     if (!enc_element(t.src, front + fw, sizeof front - fw, &wr)) return 0; fw += wr;
     { int i, idx = -1; for (i = 0; i < nlist; i++) if (!strcmp(list[i], t.dest)) { idx = i; break; }
@@ -407,8 +410,7 @@ int hb_decode(const uint8_t *fr, size_t n, char *tnc2, size_t cap, hb_info_t *in
     memset(&rx, 0, sizeof rx); alt.present = 0; prefix[0] = 0;
     if (n < 6 || fr[0] != 0x3C || fr[1] != 0xFF || fr[2] != 0x02) return HB_ERR_PREFIX;
     hdr = fr[3]; kind = hdr & 3; npath = hdr >> 4;
-    if (kind < 2) return HB_ERR_KIND;
-    if (hdr & 0x04) return HB_ERR_RESERVED;
+    if (hdr & 0x04) return HB_ERR_RESERVED;                                 /* kinds 0 and 1 are plain content, 2 and 3 LACF content; kinds 1 and 3 have a position block */
     if (!dec_element(fr, n, &i, src, sizeof src)) return HB_ERR_FRONT;
     if (i >= n) return HB_ERR_FRONT;
     { uint8_t code = fr[i] & 0x3F;                                  /* the top two bits are reserved and ignored */
@@ -418,7 +420,7 @@ int hb_decode(const uint8_t *fr, size_t n, char *tnc2, size_t cap, hb_info_t *in
     path_start = i;
     for (k = 0; k < npath; k++) if (!dec_element(fr, n, &i, path[k], sizeof path[k]) || !wide_compliant(path[k])) return HB_ERR_FRONT;
     front_len = i;
-    if (kind == 3) { if (!pos_decode(fr, n, &i, prefix, sizeof prefix, &alt)) return HB_ERR_POSITION; }
+    if (kind & 1) { if (!pos_decode(fr, n, &i, prefix, sizeof prefix, &alt)) return HB_ERR_POSITION; }
     cs = i;
     if (cs >= n) return HB_ERR_CONTENT;
     /* RXT block at the end */
@@ -440,17 +442,20 @@ int hb_decode(const uint8_t *fr, size_t n, char *tnc2, size_t cap, hb_info_t *in
         end = rxt_start; have_rxt = 1;
     }
     /* content */
-    V = fr[cs]; cc = V >> 6; ver = V & 0x3F;
-    if ((cc != 0 && cc != 3) || ver != VERSION) return HB_ERR_VERSION;
+    V = fr[cs]; cc = kind < 2 ? 3 : 0; ver = V & 7;                /* cc: 3 = plain (kinds 0 and 1), 0 = LACF (kinds 2 and 3) */
+    if ((V >> 3) != HB_WIRE_VERSION || ver != TABLE_VERSION) return HB_ERR_VERSION;
     if (cc == 3) {
-        size_t tl = end - cs - 1;
-        if (memchr(fr + cs + 1, 0, tl)) return HB_ERR_CONTENT;           /* strict: no NUL in a TNC2 packet */
-        if (kind == 3) { memcpy(comment, fr + cs + 1, tl); comment[tl] = 0; }
-        else { memcpy(text, fr + cs + 1, tl); text[tl] = 0; }
+        size_t tl; uint16_t crcw, crcc;
+        if (end < cs + 3) return HB_ERR_CONTENT;                           /* V and the CRC-16 */
+        tl = end - cs - 3; crcw = (uint16_t)(fr[cs + 1] | fr[cs + 2] << 8);
+        if (tl > 255) return HB_ERR_CONTENT;
+        if (memchr(fr + cs + 3, 0, tl)) return HB_ERR_CONTENT;           /* strict: no NUL in a TNC2 packet */
+        if (kind & 1) { memcpy(comment, fr + cs + 3, tl); comment[tl] = 0; }
+        else { memcpy(text, fr + cs + 3, tl); text[tl] = 0; }
         if (tl > 255) return HB_ERR_CONTENT;
         if (kind == 3) { size_t cl = tl; (void)cl; }
         { size_t L = tl; (void)L; }
-        if (kind == 2) { memcpy(infof, text, tl); infof[tl] = 0; }
+        if (!(kind & 1)) { memcpy(infof, text, tl); infof[tl] = 0; }
         else {
             size_t off = alt.present ? alt.offset : 0;
             if (alt.present && off > tl) return HB_ERR_POSITION;
@@ -459,6 +464,8 @@ int hb_decode(const uint8_t *fr, size_t n, char *tnc2, size_t cap, hb_info_t *in
             if (alt.present) strcat(infof, alt.text);
             strncat(infof, comment + off, tl - off);
         }
+        crcc = crc_input(hdr, V, src, dest, infof, strlen(infof));
+        if (crcc != crcw) return HB_ERR_CRC;
         if (info) { info->cc = 1; info->payload_len = 0; }
     } else {
         size_t L, pn; uint16_t crc, want; int ok;
@@ -469,7 +476,7 @@ int hb_decode(const uint8_t *fr, size_t n, char *tnc2, size_t cap, hb_info_t *in
         if (!ok) return HB_ERR_PAYLOAD;
         if (memchr(kind == 3 ? comment : text, 0, L)) return HB_ERR_CONTENT;     /* strict: no NUL in a TNC2 packet (the CRC is over the whole text, not up to the NUL) */
         if (kind == 3) comment[L] = 0; else text[L] = 0;
-        if (4 + pn >= 1 + L) return HB_ERR_SIZE;
+        if (4 + pn >= 3 + L) return HB_ERR_SIZE;
         if (kind == 2) { memcpy(infof, text, L); infof[L] = 0; }
         else {
             size_t off = alt.present ? alt.offset : 0;
@@ -492,57 +499,85 @@ int hb_decode(const uint8_t *fr, size_t n, char *tnc2, size_t cap, hb_info_t *in
       return (int)w; }
 }
 
+/* The relay, once the new path is known. fr is the received frame (accepted by hb_decode: in is its info, t its text parsed); t2 is the same packet with the
+ * relay's path: only the path may differ. Copies the source and the destination exactly as received, the position block and the content byte for byte, keeps the
+ * tuples of the earlier hops (each moves with its path element), and appends the relay's tuple at the element ownCall* of the new path. */
+static size_t relay_core(const uint8_t *fr, size_t n, const hb_info_t *in, const tnc_t *t, const tnc_t *t2, const char *relay_call, const uint8_t tuple[4], uint8_t *out, size_t cap)
+{
+    size_t i = 4, cs, end = n, w = 0, wr, pb = 0, from, fw = 4, base; int k, q, relay_idx = -1, own, np = t2->np; uint8_t hdr = fr[3]; char own_el[48]; hb_rxt_t rx;
+    uint8_t front[300];
+    snprintf(own_el, sizeof own_el, "%s*", relay_call);
+    for (k = 0; k < np; k++) if (!strcmp(t2->path[k], own_el)) { relay_idx = k; break; }
+    if (relay_idx < 0) return 0;
+    own = relay_idx <= 6;                                                   /* mask bits 0 to 6 only: an eighth element or later relays without its own tuple */
+    /* locate the parts to copy: re-walk the received front */
+    { char e[40]; size_t j = 4;
+      if (!dec_element(fr, n, &j, e, sizeof e)) return 0;
+      j++; { uint8_t code = fr[j - 1] & 0x3F; if (code == 63) { if (!dec_element(fr, n, &j, e, sizeof e)) return 0; } }
+      for (q = 0; q < in->npath; q++) if (!dec_element(fr, n, &j, e, sizeof e)) return 0;
+      pb = j;                                                               /* the position block (kind 3) starts here, the content after it */
+      if (fr[3] & 1) { char pfx[96]; alt_t a; if (!pos_decode(fr, n, &j, pfx, sizeof pfx, &a)) return 0; }
+      i = j; }
+    cs = i; if (in->has_rxt) { int kk = in->rxt.n; end = n - (size_t)(4 * kk + 1); }
+    from = (hdr & 1) ? pb : cs;
+    memset(&rx, 0, sizeof rx);
+    if (in->has_rxt) for (q = 0; q < in->rxt.n; q++) {                      /* the earlier tuples, each with its path element */
+        int oj = in->rxt.idx[q], m, pos, x;
+        if (oj >= relay_idx || oj >= t->np) return 0;                       /* a tuple on the relay's own element or a later one: not relayed (spec 11, Relay, step 3) */
+        if (oj < np && !strcmp(t2->path[oj], t->path[oj])) m = oj;
+        else { for (m = 0; m < relay_idx; m++) if (!strcmp(t2->path[m], t->path[oj])) break; if (m == relay_idx) continue; }   /* the element is gone: its tuple goes with it */
+        pos = rx.n; while (pos > 0 && rx.idx[pos - 1] > m) pos--;
+        if (pos > 0 && rx.idx[pos - 1] == m) continue;
+        for (x = rx.n; x > pos; x--) { rx.idx[x] = rx.idx[x - 1]; memcpy(rx.t[x], rx.t[x - 1], 4); }
+        rx.idx[pos] = (uint8_t)m; memcpy(rx.t[pos], in->rxt.t[q], 4); rx.n++;
+    }
+    if (own && rx.n >= HB_MAX_TUPLES) return 0;                              /* an eighth element or later adds no tuple, so it can relay a frame that already has seven */
+    /* new front */
+    front[0] = 0x3C; front[1] = 0xFF; front[2] = 0x02;
+    if (in->path_start < 4 || in->path_start - 4 > sizeof front - 4) return 0;
+    memcpy(front + fw, fr + 4, in->path_start - 4); fw += in->path_start - 4;   /* source and destination exactly as received (spec 11, Relay step 1) */
+    for (k = 0; k < np; k++) { if (!enc_element(t2->path[k], front + fw, sizeof front - fw, &wr)) return 0; fw += wr; }
+    /* size: a LoRa frame holds 255 bytes. A frame that would be longer with the relay's own tuple goes out without it (the earlier tuples stay); if it is too long even then, it is not relayed */
+    base = fw + (end - from);
+    if (own && (base + 4 * (size_t)(rx.n + 1) + 1 > 255 || base + 4 * (size_t)(rx.n + 1) + 1 > cap)) own = 0;
+    if (base + (rx.n + own ? 4 * (size_t)(rx.n + own) + 1 : 0) > 255 || base + (rx.n + own ? 4 * (size_t)(rx.n + own) + 1 : 0) > cap) return 0;
+    front[3] = (uint8_t)((np << 4) | ((rx.n + own) ? 0x08 : 0) | (hdr & 0x07));
+    memcpy(out, front, fw); w = fw;
+    /* position block and content copied byte for byte (everything between the old front and the old RXT block) */
+    memcpy(out + w, fr + from, end - from); w += end - from;
+    /* tuples: the old ones, then the relay's (its element index is the largest) */
+    if (own) { for (q = 0; q < 4; q++) rx.t[rx.n][q] = tuple[q]; rx.idx[rx.n] = (uint8_t)relay_idx; rx.n++;
+        if (rx.n > 1 && rx.idx[rx.n - 2] >= rx.idx[rx.n - 1]) return 0; }
+    if (rx.n) w += rxt_bytes(&rx, out + w);
+    (void)i; (void)cs;
+    return w;
+}
+
+size_t hb_relay_to(const uint8_t *fr, size_t n, const char *new_tnc2, size_t new_len, const char *relay_call, const uint8_t tuple[4], uint8_t *out, size_t cap)
+{
+    char tn[700]; hb_info_t in; tnc_t t, t2; int len = hb_decode(fr, n, tn, sizeof tn, &in);
+    if (len <= 0 || !tnc_parse(tn, (size_t)len, &t) || !tnc_parse(new_tnc2, new_len, &t2)) return 0;
+    if (strcmp(t.src, t2.src) || strcmp(t.dest, t2.dest) || t.ilen != t2.ilen || memcmp(t.info, t2.info, t.ilen)) return 0;    /* only the path may differ */
+    return relay_core(fr, n, &in, &t, &t2, relay_call, tuple, out, cap);
+}
+
 size_t hb_relay(const uint8_t *fr, size_t n, const char *relay_call, const uint8_t tuple[4], uint8_t *out, size_t cap)
 {
-    char tn[700]; hb_info_t in; tnc_t t; int len = hb_decode(fr, n, tn, sizeof tn, &in);
-    size_t i = 4, cs, end = n, w = 0, wr; int k, relay_idx = -1, own; uint8_t hdr; char tmp[40]; hb_rxt_t rx;
-    uint8_t front[300]; char path[16][40]; int np;
+    char tn[700]; hb_info_t in; tnc_t t, t2; int len = hb_decode(fr, n, tn, sizeof tn, &in);
+    int k, relay_idx = -1; char tmp[40];
     if (len <= 0 || !tnc_parse(tn, (size_t)len, &t)) return 0;
-    hdr = fr[3];
-    np = t.np; for (k = 0; k < np; k++) strcpy(path[k], t.path[k]);
-    for (k = 0; k < np; k++) {                                              /* the first element that is not yet used */
-        size_t l = strlen(path[k]);
-        if (l && path[k][l - 1] == '*') continue;
-        if (!strcmp(path[k], "WIDE1-1")) { snprintf(tmp, sizeof tmp, "%s*", relay_call); strcpy(path[k], tmp); relay_idx = k; }
-        else if (!strcmp(path[k], "WIDE2-1")) { snprintf(tmp, sizeof tmp, "%s*", relay_call); strcpy(path[k], tmp); relay_idx = k; }
-        else if (!strcmp(path[k], "WIDE2-2") && np < 15) {
-            int q; for (q = np; q > k + 1; q--) strcpy(path[q], path[q - 1]);
-            snprintf(tmp, sizeof tmp, "%s*", relay_call); strcpy(path[k], tmp); strcpy(path[k + 1], "WIDE2-1"); np++; relay_idx = k;
+    t2 = t;
+    for (k = 0; k < t2.np; k++) {                                           /* the first element that is not yet used */
+        size_t l = strlen(t2.path[k]);
+        if (l && t2.path[k][l - 1] == '*') continue;
+        if (!strcmp(t2.path[k], "WIDE1-1")) { snprintf(tmp, sizeof tmp, "%s*", relay_call); strcpy(t2.path[k], tmp); relay_idx = k; }
+        else if (!strcmp(t2.path[k], "WIDE2-1")) { snprintf(tmp, sizeof tmp, "%s*", relay_call); strcpy(t2.path[k], tmp); relay_idx = k; }
+        else if (!strcmp(t2.path[k], "WIDE2-2") && t2.np < 15) {
+            int q; for (q = t2.np; q > k + 1; q--) strcpy(t2.path[q], t2.path[q - 1]);
+            snprintf(tmp, sizeof tmp, "%s*", relay_call); strcpy(t2.path[k], tmp); strcpy(t2.path[k + 1], "WIDE2-1"); t2.np++; relay_idx = k;
         } else return 0;
         break;
     }
     if (relay_idx < 0) return 0;
-    own = relay_idx <= 6;                                                   /* mask bits 0 to 6 only: an eighth element or later relays without its own tuple */
-    /* locate the parts to copy: re-walk the received front */
-    { char e[40]; size_t j = 4; int q;
-      if (!dec_element(fr, n, &j, e, sizeof e)) return 0;
-      j++; { uint8_t code = fr[j - 1] & 0x3F; if (code == 63) { if (!dec_element(fr, n, &j, e, sizeof e)) return 0; } }
-      for (q = 0; q < in.npath; q++) if (!dec_element(fr, n, &j, e, sizeof e)) return 0;
-      if ((fr[3] & 3) == 3) { char pfx[96]; alt_t a; if (!pos_decode(fr, n, &j, pfx, sizeof pfx, &a)) return 0; }
-      i = j; }
-    cs = i; if (in.has_rxt) { int kk = in.rxt.n; end = n - (size_t)(4 * kk + 1); }
-    rx = in.has_rxt ? in.rxt : (hb_rxt_t){ 0 };
-    if (own && rx.n >= HB_MAX_TUPLES) return 0;                              /* an eighth element or later adds no tuple, so it can relay a frame that already has seven */
-    /* new front */
-    front[0] = 0x3C; front[1] = 0xFF; front[2] = 0x02;
-    front[3] = (uint8_t)((np << 4) | ((rx.n + own) ? 0x08 : 0) | (hdr & 0x07));
-    { size_t fw = 4;
-      if (in.path_start < 4 || in.path_start - 4 > sizeof front - 4) return 0;
-      memcpy(front + fw, fr + 4, in.path_start - 4); fw += in.path_start - 4;   /* source and destination exactly as received (spec 11, Relay step 1) */
-      for (k = 0; k < np; k++) { if (!enc_element(path[k], front + fw, sizeof front - fw, &wr)) return 0; fw += wr; }
-      if (fw + (end - (cs - 0)) + 8 + (size_t)rx.n * 4 + 5 > cap) return 0;
-      memcpy(out, front, fw); w = fw; }
-    /* position block and content copied byte for byte (everything between the old front and the old RXT block) */
-    { size_t pb = 0; if ((hdr & 3) == 3) { size_t j = 4; char e[40]; int q; alt_t a; char pfx[96];
-        dec_element(fr, n, &j, e, sizeof e); { uint8_t code = fr[j] & 0x3F; j++; if (code == 63) dec_element(fr, n, &j, e, sizeof e); }
-        for (q = 0; q < in.npath; q++) dec_element(fr, n, &j, e, sizeof e);
-        pb = j; pos_decode(fr, n, &j, pfx, sizeof pfx, &a); cs = j; (void)pb; }
-      { size_t from = (hdr & 3) == 3 ? pb : cs; memcpy(out + w, fr + from, end - from); w += end - from; } }
-    /* tuples: the old ones, then the relay's (its element index is the largest) */
-    { int q; if (own) { rx.idx[rx.n] = (uint8_t)relay_idx; for (q = 0; q < 4; q++) rx.t[rx.n][q] = tuple[q]; rx.n++;
-        if (rx.n > 1 && rx.idx[rx.n - 2] >= rx.idx[rx.n - 1]) return 0; }
-      if (rx.n) w += rxt_bytes(&rx, out + w); }
-    (void)i;
-    if (w > 255) return 0;                                                  /* a LoRa frame holds 255 bytes */
-    return w;
+    return relay_core(fr, n, &in, &t, &t2, relay_call, tuple, out, cap);
 }

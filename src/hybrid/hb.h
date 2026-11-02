@@ -9,6 +9,8 @@
 extern "C" {
 #endif
 #define HB_MAX_TUPLES 7
+#define HB_SPEC_VERSION "2.0.0"   /* semantic version of spec 11: MAJOR = wire format version (low six bits of V), MINOR = backward-compatible addition, PATCH = wording only */
+#define HB_WIRE_VERSION 2
 typedef struct { int n; uint8_t idx[HB_MAX_TUPLES]; uint8_t t[HB_MAX_TUPLES][4]; } hb_rxt_t;     /* tuples in ascending path-element index */
 typedef struct { int kind, cc, ver, npath; size_t frame_len, content_len, payload_len, front_len, path_start, content_start; hb_rxt_t rxt; int has_rxt; } hb_info_t;
 
@@ -34,6 +36,14 @@ int hb_decode(const uint8_t *fr, size_t n, char *tnc2, size_t cap, hb_info_t *in
 /* Relay (spec 11 "Relay"): the frame must already be accepted by hb_decode. Rewrites the path (WIDE1-1 as first unused hop becomes relay_call*; WIDE2-2 becomes
  * relay_call*,WIDE2-1), copies the position block and the content field byte for byte, and appends the relay's tuple. Returns the new length, or 0. */
 size_t hb_relay(const uint8_t *fr, size_t n, const char *relay_call, const uint8_t tuple[4], uint8_t *out, size_t cap);
+
+/* The same relay with the new path chosen by the caller, for a digipeater with its own rules: new_tnc2 is the received packet with the path as the relay sends it (it
+ * holds relay_call + "*" as the element the relay used); source, destination and information field must be those of the received frame. Copies the source and the
+ * destination exactly as received, the position block and the content byte for byte, keeps the tuples of the earlier hops (each moves with its path element) and
+ * appends the relay's tuple at its element, unless the frame would then be longer than 255 bytes: it is then forwarded without the relay's tuple (the earlier tuples stay).
+ * Returns 0 if the frame must not be relayed: it holds a tuple on the relay's element or a later one, the element is not in the new path, or it does not fit even without
+ * the relay's tuple. */
+size_t hb_relay_to(const uint8_t *fr, size_t n, const char *new_tnc2, size_t new_len, const char *relay_call, const uint8_t tuple[4], uint8_t *out, size_t cap);
 #ifdef __cplusplus
 }
 #endif

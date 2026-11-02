@@ -12,7 +12,7 @@ int lorah_init (void) {
 }
 
 int lorah_is_hybrid (const uint8_t *f, int len) {
-	return len >= 5 && f[0] == 0x3C && f[1] == 0xFF && f[2] == 0x02 && (f[3] & 3) >= 2;
+	return len >= 5 && f[0] == 0x3C && f[1] == 0xFF && f[2] == 0x02;      /* every kind: LACF (2, 3) and plain (0, 1) content; the receiver checks the rest */
 }
 
 int lorah_decode (const uint8_t *frame, int len, char *out, int cap, int *rxt_tuples) {
