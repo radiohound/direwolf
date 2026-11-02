@@ -1420,6 +1420,7 @@ static void *rx_thread (void *arg) {
                 s.nf_samples = nf_n;
                 if (nf_n > 0) { s.nf_avg_dbm = 10.0 * log10(nf_pwr / nf_n); s.nf_min_dbm = nf_min; s.nf_max_dbm = nf_max; }
                 s.rx_gain = lc->chip == LORA_CHIP_SX1262 ? (lc->rxgain_cur == 1 ? "boosted" : "powersave") : NULL;
+                s.lacf = lorah_version();
                 for (int i = 0; i < LORAE_NCLASSES; i++) s.class_count[i] = lc->ev_class[i];
                 s.dropped = lc->ev_dropped;  s.parse_failed = lc->ev_parse_failed;  s.crc_errors = lc->ev_crc_errors;
                 char line[1024];
@@ -1527,7 +1528,8 @@ static void *rx_thread (void *arg) {
 
             text_color_set(DW_COLOR_REC);
             dw_printf ("%s  RSSI=%d dBm  SNR=%.1f dB\n", tnc2, rssi, snr);
-            events_rx(lc, lorae_classify(buf, (size_t)nb), LORAE_OK, nb, cn > 0 ? cn + LORA_PREAMBLE_LEN : hn > 0 ? hn + LORA_PREAMBLE_LEN : nb,
+            /* a frame that decoded as LACF is hybrid whatever its kind: kinds 0 and 1 are the plain form of protocol version 2, not the old native frame */
+            events_rx(lc, hn > 0 ? LORAE_HYBRID : lorae_classify(buf, (size_t)nb), LORAE_OK, nb, cn > 0 ? cn + LORA_PREAMBLE_LEN : hn > 0 ? hn + LORA_PREAMBLE_LEN : nb,
                       tnc2, strlen(tnc2), rssi, snr);
         }
 
@@ -1563,7 +1565,7 @@ static void *tx_thread (void *arg) {
             t.boot_id = lorae_boot_id();  t.station = lc->station;  t.channel = lc->chan;
             t.freq_hz = (long)(lc->freq_mhz * 1e6 + 0.5);  t.bw_hz = (long)(lc->bw_khz * 1e3 + 0.5);
             t.sf = lc->sf;  t.cr = lc->cr;
-            t.frame_class = lorae_classify(data, (size_t)len);  t.air_bytes = len;  t.ok = ok ? 1 : 0;
+            t.frame_class = lorah_is_hybrid(data, len) ? LORAE_HYBRID : lorae_classify(data, (size_t)len);  t.air_bytes = len;  t.ok = ok ? 1 : 0;      /* every LACF frame we send is hybrid, kinds 0 to 3 */
             char line[768];
             size_t n = lorae_format_tx(line, sizeof(line), &t);
             if (n > 0) lorae_write(line, n);

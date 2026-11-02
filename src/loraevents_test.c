@@ -200,6 +200,10 @@ int main (int argc, char **argv) {
     st.nf_samples = 0;
     lorae_format_status(line, sizeof line, &st);
     expect_in(line, "\"noise_floor\":null");
+    expect_in(line, "\"crc_errors\":4}");
+    st.lacf = "2.0.0";                         /* the LACF version of the build, when it speaks LACF */
+    lorae_format_status(line, sizeof line, &st);
+    expect_in(line, "\"lacf\":\"2.0.0\",\"received\":{");
 
     if (failures) { printf("loraevents_test: %d FAILED\n", failures); return 1; }
     printf("loraevents_test passed\n");

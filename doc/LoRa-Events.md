@@ -37,7 +37,7 @@ that stream can read these lines. The `frame` block and `heard_from` are additio
                "heard_from":"K6ATV-4","direct":true,"hops_used":0,"private_path":false}}
 
 * `frame.class`: how the frame arrived: `plain` (`3C FF 01`), `ppm_full` (`3C FF 81`), `ppm_primed` (`3C FF C1`),
-  `native` (`3C FF 02` kinds 0 and 1; this build does not decode it, so it appears as `parse_failed`), `hybrid` (`3C FF 02` kinds 2 and 3, decoded when `LORAHYBRIDRX` is on; added after schema 0.1 was first written, as a new name that older readers can ignore), or `unknown`.
+  `native` (`3C FF 02` of kind 0 or 1 that was not decoded: the old native frame of F4MLV's draft 0, or a frame of another protocol version; it appears as `parse_failed`, or as a CRC error), `hybrid` (a LACF frame: `3C FF 02`, decoded when `LORAHYBRIDRX` is on, and since protocol version 2 of any kind: kinds 0 and 1 are the plain form, 2 and 3 the PPM form; frames that are decoded or sent are always `hybrid`; added after schema 0.1 was first written, as a new name that older readers can ignore), or `unknown`.
 * `frame.air_bytes` and `plain_bytes`: the size on the air, and what the plain frame would have been.
 * `frame.outcome`: `ok`, `dropped_no_reference` (a primed frame whose reference was not heard; no `packet`), or
   `parse_failed`, or `crc_error` (see below).
@@ -62,6 +62,9 @@ that stream can read these lines. The `frame` block and `heard_from` are additio
 
 The noise floor over the last minute (average, minimum, maximum and number of samples), the receive-gain mode, and how
 many frames of each class were received, how many compressed frames were dropped, how many could not be parsed, and how many frames failed the LoRa CRC.
+
+`lacf` is the LACF version this build speaks (spec 11, `MAJOR.MINOR.PATCH`, for example `"2.0.0"`); MAJOR is the protocol version carried in every frame. A reader can show which version each receiver runs, and
+explain frames heard but not decoded (a station on another protocol version drops and is dropped). Absent from builds that do not report it.
 
 ## Limits
 

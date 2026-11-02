@@ -303,6 +303,7 @@ size_t lorae_format_status (char *out, size_t cap, const lorae_status_t *e) {
     else
         sb_put(&b, ",\"noise_floor\":null");
     if (e->rx_gain) { sb_put(&b, ",\"rx_gain\":"); sb_json_string(&b, e->rx_gain, strlen(e->rx_gain)); }
+    if (e->lacf) { sb_put(&b, ",\"lacf\":"); sb_json_string(&b, e->lacf, strlen(e->lacf)); }
     sb_put(&b, ",\"received\":{");
     for (int i = 0; i < LORAE_NCLASSES; i++)
         sb_printf(&b, "%s\"%s\":%ld", i ? "," : "", lorae_class_name(i), e->class_count[i]);

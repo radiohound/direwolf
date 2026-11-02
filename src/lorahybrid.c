@@ -33,3 +33,7 @@ int lorah_encode (const char *tnc2, int len, uint8_t *out, int cap) {
 }
 
 const char *lorah_reason (int code) { return hb_reason(code); }
+
+const char *lorah_version (void) {
+	return HB_SPEC_VERSION;
+}

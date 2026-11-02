@@ -21,5 +21,6 @@ int lorah_decode (const uint8_t *frame, int len, char *out, int cap, int *rxt_tu
 /* Returns the frame length, or 0 if the packet cannot be encoded. */
 int lorah_encode (const char *tnc2, int len, uint8_t *out, int cap);
 const char *lorah_reason (int code);
+const char *lorah_version (void);					/* the LACF version of this code, spec 11 "MAJOR.MINOR.PATCH" (MAJOR is the protocol version in every frame) */
 
 #endif
