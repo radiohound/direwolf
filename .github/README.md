@@ -46,5 +46,7 @@ SX1276 LoRa HAT. The driver's commits are below this branch's own.
 * [The specifications, test log and comparisons](https://github.com/radiohound/aprs-compression-proposal) (the proposal repository)
 * Questions, results and problems: please open an [issue in the proposal repository](https://github.com/radiohound/aprs-compression-proposal/issues).
 
+Credit: the current format, LACF, is developed together with Fabrice Morel, F4MLV (moricef), combining his native LoRa APRS frame and code with the PPM compression; see [doc/LoRa-Hybrid.md](../doc/LoRa-Hybrid.md).
+
 Licence: as Dire Wolf, the GNU GPL version 2 (see `LICENSE`). The compression codec and model files (`src/aprs_ppm*.c`,
 `src/aprs_ppm_model_v1.c`) are MIT-licensed, which is GPL-compatible, and say so in their headers.
