@@ -42,7 +42,7 @@ SX1276 LoRa HAT. The driver's commits are below this branch's own.
 
 * [The same idea in the ESP32 iGate firmware](https://github.com/radiohound/LoRa_APRS_iGate/tree/feature/order3-compression)
   and [in a T-Deck tracker firmware](https://github.com/radiohound/LoRa_APRS_Tracker-moricef/tree/ppm-compression)
-* [A short illustrated summary (PDF)](https://github.com/radiohound/aprs-compression-proposal/blob/main/docs/brochure.pdf) and [questions and answers](https://github.com/radiohound/aprs-compression-proposal/blob/main/docs/faq.md)
+* [Questions and answers](https://github.com/radiohound/aprs-compression-proposal/blob/main/docs/faq.md)
 * [The specifications, test log and comparisons](https://github.com/radiohound/aprs-compression-proposal) (the proposal repository)
 * Questions, results and problems: please open an [issue in the proposal repository](https://github.com/radiohound/aprs-compression-proposal/issues).
 
