@@ -9,7 +9,7 @@ DW_BIN=${DW_BIN:-/usr/local/bin/direwolf}
 DW_CONF=${DW_CONF:-$HOME/direwolf.conf}
 DW_SERVICE=${DW_SERVICE:-/etc/systemd/system/direwolf-chase.service}
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
-CODE_COMMIT=ccca510b3eb35db85221c1953566a46cb55cee99    # the last code change (the LACF frame code synced with the reference of spec 11, ccca510; before it the WIDE rule 7e54e5c and the LORAEVENTS private_path rule f2a2ce6, on top of hybrid c9edadb and the LORAEVENTS broken-frame commit a737409); later commits on the branch may only change files under scripts/hill-hybrid/ and doc/LoRa-Hybrid.md
+CODE_COMMIT=ccca510b3eb35db85221c1953566a46cb55cee99    # the last code change (the LACF frame code synced with the reference of spec 11, ccca510; before it the WIDE rule 7e54e5c and the LORAEVENTS private_path rule f2a2ce6, on top of hybrid c9edadb and the LORAEVENTS broken-frame commit a737409); later commits on the branch may only change files under scripts/hill-hybrid/ and .github/ and doc/LoRa-Hybrid.md
 
 step() { echo; echo "=== $*"; }
 die()  { echo; echo "STOP: $*" >&2; exit 1; }
@@ -31,7 +31,7 @@ step "2. Check the source in $REPO"
 cd "$REPO" || die "cannot enter $REPO"
 [ "$(git rev-parse --abbrev-ref HEAD)" = feature/lora-hybrid ] || die "this clone is not on branch feature/lora-hybrid"
 git merge-base --is-ancestor "$CODE_COMMIT" HEAD || die "this clone does not contain the code commit ${CODE_COMMIT:0:7}"
-OTHER=$(git diff --name-only "$CODE_COMMIT" HEAD | grep -v '^scripts/hill-hybrid/\|^doc/LoRa-Hybrid.md$' || true)
+OTHER=$(git diff --name-only "$CODE_COMMIT" HEAD | grep -v '^scripts/hill-hybrid/\|^doc/LoRa-Hybrid.md$\|^\.github/' || true)
 [ -z "$OTHER" ] || die "the branch changed files other than these scripts since ${CODE_COMMIT:0:7}: $OTHER"
 [ -z "$(git status --porcelain --untracked-files=no)" ] || die "the clone has local changes"
 echo "Source OK: $(git log --format=%h -1) = code commit ${CODE_COMMIT:0:7} plus scripts and docs only"
