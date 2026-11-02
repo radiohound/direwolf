@@ -9,7 +9,7 @@ DW_BIN=${DW_BIN:-/usr/local/bin/direwolf}
 DW_CONF=${DW_CONF:-$HOME/direwolf.conf}
 DW_SERVICE=${DW_SERVICE:-/etc/systemd/system/direwolf-chase.service}
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
-CODE_COMMIT=1c5a4c407f112d67a806082ff24198e79d098d62    # the last code change (the LACF version in the status event, and decoded or sent LACF frames are class hybrid; before: protocol version 2, a7d8467)
+CODE_COMMIT=8f4651df62914fbe5132ee753704ac5aa4d70d9c    # the last code change (decoded or sent LACF frames are class hybrid whatever their kind; before: protocol version 2, a7d8467)
 
 step() { echo; echo "=== $*"; }
 die()  { echo; echo "STOP: $*" >&2; exit 1; }
