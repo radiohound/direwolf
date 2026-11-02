@@ -9,7 +9,7 @@ DW_BIN=${DW_BIN:-/usr/local/bin/direwolf}
 DW_CONF=${DW_CONF:-$HOME/direwolf.conf}
 DW_SERVICE=${DW_SERVICE:-/etc/systemd/system/direwolf-chase.service}
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
-CODE_COMMIT=ccca510b3eb35db85221c1953566a46cb55cee99    # the last code change (the LACF frame code synced with the reference of spec 11, ccca510; before it the WIDE rule 7e54e5c and the LORAEVENTS private_path rule f2a2ce6, on top of hybrid c9edadb and the LORAEVENTS broken-frame commit a737409); later commits on the branch may only change files under scripts/hill-hybrid/ and .github/ and doc/LoRa-Hybrid.md
+CODE_COMMIT=a7d8467354a4bc77c393b5e155787e90aafe8028    # the last code change (LACF protocol version 2: plain content has a CRC-16, V is protocol and table version, the form is in the kind; before it the frame code synced with the reference ccca510, the WIDE rule 7e54e5c and the LORAEVENTS private_path rule f2a2ce6); later commits on the branch may only change files under scripts/hill-hybrid/ and .github/ and doc/LoRa-Hybrid.md
 
 step() { echo; echo "=== $*"; }
 die()  { echo; echo "STOP: $*" >&2; exit 1; }
